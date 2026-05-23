@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v0.5</title>
+  <title>LivePic v0.7</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>1枚絵を読み込んで、ズーム編集・口パク・まばたき・簡易メッシュ変形を試すα版</p>
+    <p>1枚絵をIRIAM方向に近づけるための滑らか変形テスト版</p>
   </div>
   <div class="header-actions">
     <button id="openObsBtn" class="primary">OBS表示</button>
-    <span class="pill">v0.5 Mesh Alpha</span>
+    <span class="pill">v0.7 IRIAM Direction</span>
   </div>
 </header>
 
@@ -26,7 +26,7 @@
       <span>画像を選択</span>
     </label>
     <button id="sampleBtn">サンプルキャラ表示</button>
-    <div id="fileName" class="hint">最初はサンプルが出ます。透過PNG推奨。</div>
+    <div id="fileName" class="hint">透過PNG推奨。最初はサンプルが出ます。</div>
 
     <h2>ポイント指定</h2>
     <div class="tool-grid">
@@ -37,9 +37,9 @@
       <button class="tool" data-point="chin">あご</button>
       <button class="tool" data-point="neck">首</button>
       <button class="tool" data-point="body">体中心</button>
-      <button class="tool" data-point="hair">髪揺れ中心</button>
+      <button class="tool" data-point="hair">髪中心</button>
     </div>
-    <p class="hint">ズームしてからポイント配置できます。ドラッグで表示移動。</p>
+    <p class="hint">ホイールでズーム、ドラッグで表示移動。クリックでポイント配置。</p>
     <button id="autoPointBtn">ポイント自動配置</button>
 
     <h2>保存/復元</h2>
@@ -64,56 +64,59 @@
 
     <div class="zoom-toolbar">
       <button id="zoomOutBtn">−</button>
-      <input id="zoomRange" type="range" min="50" max="400" value="100">
+      <input id="zoomRange" type="range" min="50" max="450" value="100">
       <button id="zoomInBtn">＋</button>
-      <button id="zoomResetBtn">ズーム戻す</button>
+      <button id="zoomResetBtn">戻す</button>
       <span id="zoomVal">100%</span>
     </div>
 
     <div id="stage" class="stage">
       <canvas id="canvas"></canvas>
-      <div id="dropMessage">画像を読み込んでください</div>
+      <div id="dropMessage">読み込み中...</div>
     </div>
 
     <div class="readout">
       <span id="currentTool">選択中: 顔中心</span>
-      <span>ホイール: ズーム / ドラッグ: 移動</span>
+      <span>A/D: 顔向き / Space: 口 / B: まばたき</span>
       <span id="fps">FPS: --</span>
     </div>
   </section>
 
   <section class="panel">
     <h2>基本モーション</h2>
-    <label>呼吸 <span id="breathVal">16</span></label>
-    <input id="breath" type="range" min="0" max="60" value="16">
-    <label>左右ゆらぎ <span id="swayVal">10</span></label>
-    <input id="sway" type="range" min="0" max="50" value="10">
-    <label>傾き <span id="tiltVal">6</span></label>
-    <input id="tilt" type="range" min="0" max="22" value="6">
-    <label>口パク量 <span id="mouthAmountVal">24</span></label>
-    <input id="mouthAmount" type="range" min="0" max="75" value="24">
-    <label>まばたき量 <span id="blinkAmountVal">16</span></label>
-    <input id="blinkAmount" type="range" min="0" max="50" value="16">
-    <label>マイク感度 <span id="micGainVal">3.0</span></label>
-    <input id="micGain" type="range" min="0.5" max="8" step="0.1" value="3.0">
+    <label>呼吸 <span id="breathVal"></span></label>
+    <input id="breath" type="range" min="0" max="70" value="16">
+    <label>左右ゆらぎ <span id="swayVal"></span></label>
+    <input id="sway" type="range" min="0" max="55" value="10">
+    <label>傾き <span id="tiltVal"></span></label>
+    <input id="tilt" type="range" min="0" max="24" value="6">
+    <label>マイク感度 <span id="micGainVal"></span></label>
+    <input id="micGain" type="range" min="0.5" max="9" step="0.1" value="3.0">
 
-    <h2>メッシュ変形</h2>
-    <label>メッシュON <input id="meshEnabled" type="checkbox" checked></label>
-    <label>顔向き <span id="yawVal">0</span></label>
+    <h2>顔変形</h2>
+    <label>滑らか変形ON <input id="meshEnabled" type="checkbox" checked></label>
+    <label>顔向き <span id="yawVal"></span></label>
     <input id="yaw" type="range" min="-100" max="100" value="0">
-    <label>変形強さ <span id="meshPowerVal">32</span></label>
-    <input id="meshPower" type="range" min="0" max="80" value="32">
-    <label>顔範囲 <span id="faceRadiusVal">210</span></label>
-    <input id="faceRadius" type="range" min="80" max="360" value="210">
+    <label>変形強さ <span id="meshPowerVal"></span></label>
+    <input id="meshPower" type="range" min="0" max="120" value="48">
+    <label>顔範囲 <span id="faceRadiusVal"></span></label>
+    <input id="faceRadius" type="range" min="80" max="420" value="230">
+    <label>滑らか密度 <span id="meshDensityVal"></span></label>
+    <input id="meshDensity" type="range" min="18" max="90" value="54">
     <button id="autoYawBtn">顔向き自動テスト OFF</button>
 
-    <h2>操作</h2>
-    <div class="key-help">
-      <span>A/D: 顔向き</span>
-      <span>W/S: 上下</span>
-      <span>Space: 口パク</span>
-      <span>B: まばたき</span>
-    </div>
+    <h2>表情</h2>
+    <label>口パク量 <span id="mouthAmountVal"></span></label>
+    <input id="mouthAmount" type="range" min="0" max="90" value="34">
+    <label>口の横幅 <span id="mouthWideVal"></span></label>
+    <input id="mouthWide" type="range" min="10" max="90" value="44">
+    <label>まばたき量 <span id="blinkAmountVal"></span></label>
+    <input id="blinkAmount" type="range" min="0" max="70" value="28">
+    <label>目線ゆらぎ <span id="eyeWanderVal"></span></label>
+    <input id="eyeWander" type="range" min="0" max="30" value="8">
+
+    <h2>注意</h2>
+    <p class="hint">これはまだ“IRIAM方向の研究版”。本物っぽくするには、次に「目・口・頬・髪の専用範囲マスク」が必要。</p>
   </section>
 </main>
 
