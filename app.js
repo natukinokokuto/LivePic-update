@@ -34,7 +34,8 @@ const state = {
   lastFrame:performance.now(),
   fps:0,
   nextBlink:0,
-  obs:false
+  obs:false,
+  view: { zoom:1, panX:0, panY:0, dragging:false, lastX:0, lastY:0, pointLarge:true }
 };
 
 const pointLabels = {
@@ -96,6 +97,7 @@ function init(){
   fitObs();
   wireEvents();
   setNextBlink();
+  updateZoomUi();
   const restored = restoreFromLocal(false);
   if(!restored){
     loadSampleCharacter();
@@ -147,7 +149,63 @@ function wireEvents(){
     });
   });
 
-  canvas.addEventListener("click", e=> placePointByClick(e, canvas));
+  canvas.addEventListener("click", e=> {
+    if(state.view.dragMoved) {
+      state.view.dragMoved = false;
+      return;
+    }
+    placePointByClick(e, canvas);
+  });
+
+  canvas.addEventListener("mousedown", e=>{
+    state.view.dragging = true;
+    state.view.lastX = e.clientX;
+    state.view.lastY = e.clientY;
+    state.view.dragMoved = false;
+  });
+  window.addEventListener("mousemove", e=>{
+    if(!state.view.dragging) return;
+    const dx = e.clientX - state.view.lastX;
+    const dy = e.clientY - state.view.lastY;
+    if(Math.abs(dx) + Math.abs(dy) > 3) state.view.dragMoved = true;
+    state.view.panX += dx;
+    state.view.panY += dy;
+    state.view.lastX = e.clientX;
+    state.view.lastY = e.clientY;
+  });
+  window.addEventListener("mouseup", ()=>{
+    state.view.dragging = false;
+  });
+  canvas.addEventListener("wheel", e=>{
+    e.preventDefault();
+    const before = state.view.zoom;
+    const delta = e.deltaY < 0 ? 1.12 : 0.88;
+    state.view.zoom = clamp(state.view.zoom * delta, .5, 3.5);
+    updateZoomUi();
+  }, {passive:false});
+
+  document.getElementById("zoomRange").addEventListener("input", e=>{
+    state.view.zoom = Number(e.target.value) / 100;
+    updateZoomUi();
+  });
+  document.getElementById("zoomInBtn").onclick = ()=>{
+    state.view.zoom = clamp(state.view.zoom * 1.2, .5, 3.5);
+    updateZoomUi();
+  };
+  document.getElementById("zoomOutBtn").onclick = ()=>{
+    state.view.zoom = clamp(state.view.zoom / 1.2, .5, 3.5);
+    updateZoomUi();
+  };
+  document.getElementById("zoomResetBtn").onclick = ()=>{
+    state.view.zoom = 1;
+    state.view.panX = 0;
+    state.view.panY = 0;
+    updateZoomUi();
+  };
+  document.getElementById("pointSizeBtn").onclick = ()=>{
+    state.view.pointLarge = !state.view.pointLarge;
+    document.getElementById("pointSizeBtn").textContent = state.view.pointLarge ? "ポイント大" : "ポイント小";
+  };
 
   document.getElementById("autoPointBtn").onclick = autoPlacePoints;
   document.getElementById("resetMotionBtn").onclick = resetMotionControls;
@@ -263,7 +321,7 @@ updateControlLabels();
 function placePointByClick(e, targetCanvas){
   if(!state.image) return;
   const rectDom = targetCanvas.getBoundingClientRect();
-  const imgRect = getImageRect(rectDom.width, rectDom.height);
+  const imgRect = getImageRect(rectDom.width, rectDom.height, true);
   const nx = (e.clientX - rectDom.left - imgRect.x) / imgRect.w;
   const ny = (e.clientY - rectDom.top - imgRect.y) / imgRect.h;
   state.points[state.tool] = {x: clamp(nx,0,1), y: clamp(ny,0,1)};
@@ -418,6 +476,15 @@ async function copyObsHint(){
   }
 }
 
+
+function updateZoomUi(){
+  const percent = Math.round(state.view.zoom * 100);
+  const range = document.getElementById("zoomRange");
+  const val = document.getElementById("zoomVal");
+  if(range) range.value = percent;
+  if(val) val.textContent = percent + "%";
+}
+
 function fitCanvasToStage(){
   const stage = document.getElementById("stage");
   const rect = stage.getBoundingClientRect();
@@ -435,21 +502,24 @@ function fitObs(){
   obsCtx.setTransform(dpr,0,0,dpr,0,0);
 }
 
-function getImageRect(w,h){
+function getImageRect(w,h, useView=false){
   if(!state.image) return {x:0,y:0,w:0,h:0};
   const iw = state.image.width;
   const ih = state.image.height;
-  const scale = Math.min(w/iw, h/ih) * .92;
-  const rw = iw * scale;
-  const rh = ih * scale;
-  return {x:(w-rw)/2, y:(h-rh)/2, w:rw, h:rh};
+  const baseScale = Math.min(w/iw, h/ih) * .92;
+  const zoom = useView ? state.view.zoom : 1;
+  const rw = iw * baseScale * zoom;
+  const rh = ih * baseScale * zoom;
+  const panX = useView ? state.view.panX : 0;
+  const panY = useView ? state.view.panY : 0;
+  return {x:(w-rw)/2 + panX, y:(h-rh)/2 + panY, w:rw, h:rh};
 }
 
 function draw(targetCtx, w, h, showPoints){
   targetCtx.clearRect(0,0,w,h);
   if(!state.image) return;
 
-  const rect = getImageRect(w,h);
+  const rect = getImageRect(w,h, showPoints);
   const c = state.controls;
   const t = state.t;
   const motion = state.motion ? 1 : 0;
@@ -535,15 +605,32 @@ function drawPoints(targetCtx, rect){
     targetCtx.fillStyle = pointColors[k] || "#fff";
     targetCtx.strokeStyle = "rgba(0,0,0,.72)";
     targetCtx.lineWidth = 3;
+    const large = state.view.pointLarge;
+    const r = large ? (k===state.tool ? 16 : 12) : (k===state.tool ? 9 : 7);
     targetCtx.beginPath();
-    targetCtx.arc(x,y,k===state.tool?8:6,0,Math.PI*2);
+    targetCtx.arc(x,y,r,0,Math.PI*2);
     targetCtx.fill();
     targetCtx.stroke();
-    targetCtx.font = "700 12px system-ui";
-    targetCtx.fillStyle = "rgba(0,0,0,.75)";
-    targetCtx.fillText(pointLabels[k], x+11, y-7);
+
+    if(k===state.tool){
+      targetCtx.strokeStyle = "rgba(126,231,255,.85)";
+      targetCtx.lineWidth = 3;
+      targetCtx.beginPath();
+      targetCtx.arc(x,y,r+8,0,Math.PI*2);
+      targetCtx.stroke();
+      targetCtx.beginPath();
+      targetCtx.moveTo(x-26,y);
+      targetCtx.lineTo(x+26,y);
+      targetCtx.moveTo(x,y-26);
+      targetCtx.lineTo(x,y+26);
+      targetCtx.stroke();
+    }
+
+    targetCtx.font = large ? "800 15px system-ui" : "700 12px system-ui";
+    targetCtx.fillStyle = "rgba(0,0,0,.78)";
+    targetCtx.fillText(pointLabels[k], x+r+6, y-r-2);
     targetCtx.fillStyle = "white";
-    targetCtx.fillText(pointLabels[k], x+10, y-8);
+    targetCtx.fillText(pointLabels[k], x+r+5, y-r-3);
     targetCtx.restore();
   });
 }

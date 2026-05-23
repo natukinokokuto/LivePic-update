@@ -202,3 +202,32 @@ body.obs-mode #closeObs{
   outline:3px solid rgba(126,231,255,.45);
   outline-offset:-8px;
 }
+
+
+.zoom-toolbar{
+  display:grid;
+  grid-template-columns:44px 90px 1fr 44px 82px 92px;
+  gap:8px;
+  align-items:center;
+  padding:8px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.035);
+}
+.zoom-toolbar label{
+  margin:0;
+  font-size:12px;
+  justify-content:center;
+}
+.zoom-toolbar input[type=range]{
+  width:100%;
+}
+.zoom-toolbar button{
+  padding:8px 10px;
+}
+.stage{
+  cursor:grab;
+}
+.stage:active{
+  cursor:grabbing;
+}

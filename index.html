@@ -65,6 +65,15 @@
         <button id="talkBtn">口パク</button>
       </div>
 
+      <div class="zoom-toolbar">
+        <button id="zoomOutBtn">−</button>
+        <label>ズーム <span id="zoomVal">100%</span></label>
+        <input id="zoomRange" type="range" min="50" max="350" value="100" />
+        <button id="zoomInBtn">＋</button>
+        <button id="zoomResetBtn">リセット</button>
+        <button id="pointSizeBtn">ポイント大</button>
+      </div>
+
       <div id="stage" class="stage">
         <canvas id="canvas"></canvas>
         <div id="dropMessage">
@@ -75,6 +84,7 @@
 
       <div class="readout">
         <span id="currentTool">選択中: 顔中心</span>
+        <span>ドラッグ: 表示移動 / ホイール: ズーム</span>
         <span id="micStatus">Mic: OFF</span>
         <span id="fps">FPS: --</span>
       </div>
