@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.0 Sample Character + Rig Fix</title>
+  <title>LivePic v3.1 Live2D Bone Rig</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>黒髪サンプル追加・口/目レイヤー動作を強化した版。</p>
+    <p>骨・パーツ・表情プリセットを追加したLive2D寄せ版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">Live2D寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.0 Sample Rig</span>
+    <span class="pill">v3.1 Bone Rig</span>
   </div>
 </header>
 
@@ -71,6 +71,10 @@
     <div class="row">
       <button id="sampleRigBtn" class="primary">サンプル用リグ設定</button>
       <button id="forceMotionBtn">動作テスト強</button>
+    </div>
+    <div class="row">
+      <button id="exprSmileBtn">表情: 笑顔</button>
+      <button id="exprResetBtn">表情: 通常</button>
     </div>
     <div id="maskStatus" class="hint">顔・目・口・髪の疑似マスクを作って、元絵の穴を周囲色で埋めます。</div>
 
@@ -204,6 +208,15 @@
     <input id="neckFollow" type="range" min="0" max="1" step="0.05" value="0.35">
     <label>髪の遅れ量 <span id="hairDelayVal"></span></label>
     <input id="hairDelay" type="range" min="0" max="1" step="0.05" value="0.45">
+    <label>ボーン制御 <input id="boneRigMode" type="checkbox" checked></label>
+    <label>頭ボーン <span id="headBoneVal"></span></label>
+    <input id="headBone" type="range" min="0" max="1.5" step="0.05" value="0.75">
+    <label>首ボーン <span id="neckBoneVal"></span></label>
+    <input id="neckBone" type="range" min="0" max="1.5" step="0.05" value="0.42">
+    <label>体ボーン <span id="bodyBoneVal"></span></label>
+    <input id="bodyBone" type="range" min="0" max="1.5" step="0.05" value="0.18">
+    <label>髪ボーン <span id="hairBoneVal"></span></label>
+    <input id="hairBone" type="range" min="0" max="1.5" step="0.05" value="0.62">
 
     <h2>口メッシュ</h2>
     <label>口感度 <span id="mouthSensitivityVal"></span></label>
