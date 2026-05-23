@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.5 Visible Eye/Mouth Layers</title>
+  <title>LivePic v3.6 Auto Contour Trace Rig</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>目と口の専用表示レイヤーを強化した版。</p>
+    <p>実線輪郭トレースと目/口ポイント自動補正を追加した版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">Live2D寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.5 Visible Layers</span>
+    <span class="pill">v3.6 Contour Rig</span>
   </div>
 </header>
 
@@ -88,6 +88,10 @@
     <div class="row">
       <button id="oneClickRigBtn" class="primary">自動生成→動作確認</button>
       <button id="panicResetBtn">表示/動作リセット</button>
+    </div>
+    <div class="row">
+      <button id="traceRigBtn" class="primary">輪郭トレース自動リグ</button>
+      <button id="traceOnlyBtn">輪郭だけ検出</button>
     </div>
     <div id="partsStatus" class="hint">顔・髪・目・口・首・体・穴埋めベースをアプリ内で生成します。</div>
     <div id="errorStatus" class="hint error-box">エラーなし</div>
@@ -209,6 +213,18 @@
     <input id="mouthRedBoost" type="range" min="0.5" max="3.0" step="0.1" value="1.6">
     <label>分類なめらか <span id="segSmoothVal"></span></label>
     <input id="segSmooth" type="range" min="0" max="20" value="6">
+
+    <h2>輪郭トレース</h2>
+    <label>輪郭トレース <input id="contourTraceMode" type="checkbox" checked></label>
+    <label>線の濃さ感度 <span id="lineDarkSensitivityVal"></span></label>
+    <input id="lineDarkSensitivity" type="range" min="0.5" max="4" step="0.1" value="2.2">
+    <label>線の接続距離 <span id="lineConnectVal"></span></label>
+    <input id="lineConnect" type="range" min="1" max="20" value="6">
+    <label>口探索幅 <span id="mouthSearchScaleVal"></span></label>
+    <input id="mouthSearchScale" type="range" min="0.5" max="2" step="0.05" value="0.95">
+    <label>目探索幅 <span id="eyeSearchScaleVal"></span></label>
+    <input id="eyeSearchScale" type="range" min="0.5" max="2" step="0.05" value="0.90">
+    <label>ポイント自動補正 <input id="autoRefinePoints" type="checkbox" checked></label>
     <label>メッシュ密度 <span id="meshDensityVal"></span></label>
     <input id="meshDensity" type="range" min="10" max="70" value="36">
     <label>全体変形倍率 <span id="globalPowerVal"></span></label>

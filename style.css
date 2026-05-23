@@ -88,3 +88,12 @@ body.obs-mode{background:transparent;overflow:hidden}body.obs-mode .app-header,b
   50%{box-shadow:0 0 0 4px rgba(126,231,255,.35)}
   100%{box-shadow:0 0 0 0 rgba(126,231,255,.0)}
 }
+
+.contour-dot{
+  position:absolute;
+  width:4px;
+  height:4px;
+  border-radius:999px;
+  background:#7ee7ff;
+  pointer-events:none;
+}

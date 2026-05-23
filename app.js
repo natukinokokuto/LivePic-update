@@ -12,10 +12,10 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,parts:null,segmentation:null,showSegmentation:false,partsPreviewOpen:false,
+  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,parts:null,segmentation:null,contours:null,showSegmentation:false,partsPreviewOpen:false,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,contourTraceMode:true,lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:0.95,eyeSearchScale:0.90,autoRefinePoints:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
     blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
@@ -185,6 +185,8 @@ function robustReconnectButtons(){
   onClickSafe("applyPartsRigBtn", applyGeneratedPartsRigSafe);
   onClickSafe("sampleRigBtn", applySampleRigPresetSafe);
   onClickSafe("oneClickRigBtn", oneClickAutoRig);
+  onClickSafe("traceRigBtn", oneClickContourRig);
+  onClickSafe("traceOnlyBtn", traceContoursOnly);
   onClickSafe("panicResetBtn", panicReset);
   onClickSafe("talkBtn", forceTalkMotion);
   onClickSafe("blinkBtn", forceBlinkMotion);
@@ -313,6 +315,10 @@ function forceBigMotion(){
 }
 function oneClickAutoRig(){
   ensureImageAndPoints();
+  if(state.controls.contourTraceMode){
+    oneClickContourRig();
+    return;
+  }
   generateLocalSegmentationSafe();
   generatePartsFromSegmentationSafe();
   applyGeneratedPartsRigSafe();
@@ -351,7 +357,7 @@ function panicReset(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,contourTraceMode:true,lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:0.95,eyeSearchScale:0.90,autoRefinePoints:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
     blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
@@ -562,7 +568,19 @@ function loadImage(url,name,auto){
   };
   img.src=url;
 }
-function autoPoints(){state.points={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};}
+function autoPoints(){
+  // Tuned default for the bundled sample; still usable as a generic starting point.
+  state.points={
+    face:{x:.50,y:.36},
+    leftEye:{x:.405,y:.325},
+    rightEye:{x:.595,y:.325},
+    mouth:{x:.50,y:.455},
+    chin:{x:.50,y:.535},
+    neck:{x:.50,y:.585},
+    body:{x:.50,y:.73},
+    hair:{x:.50,y:.235}
+  };
+}
 
 async function getFaceMesh(){
   if(state.faceMesh)return state.faceMesh;
@@ -694,6 +712,7 @@ function draw(g,w,h,editor){
   }
 
   setDebugStatus("render","OK");
+  if(editor && state.contours) drawContourOverlay(g,r);
   if(editor && state.showSegmentation && state.segmentation) drawSegmentationOverlay(g,r);
   if(state.debug&&editor&&state.controls.showGuideCircles)drawGuides(g,r);
   if(editor&&state.controls.showPins)drawPoints(g,r);
@@ -721,6 +740,233 @@ function setSegStatus(text,kind="good"){
   if(!el)return;
   el.textContent=text;
   el.className="hint "+kind;
+}
+
+
+function traceContoursOnly(){
+  ensureImageAndPoints();
+  state.contours = traceFeatureContours();
+  if(state.controls.autoRefinePoints) refinePointsFromContours();
+  applyContourMasksToLayers();
+  setPartsStatus("輪郭トレース完了。目/口ポイントも補正しました","good");
+  flashStage();
+}
+
+function oneClickContourRig(){
+  ensureImageAndPoints();
+  state.contours = traceFeatureContours();
+  if(state.controls.autoRefinePoints) refinePointsFromContours();
+  applyContourMasksToLayers();
+  generatePartsFromContourLayers();
+  applyGeneratedPartsRigSafe();
+  ensureMotionVisibleDefaults();
+  setPartsStatus("輪郭トレース→パーツ生成→リグ適用まで実行しました","good");
+  flashStage();
+}
+
+function traceFeatureContours(){
+  const src=document.createElement("canvas");
+  src.width=state.image.width; src.height=state.image.height;
+  const g=src.getContext("2d");
+  g.drawImage(state.image,0,0);
+  const img=g.getImageData(0,0,src.width,src.height);
+  const p=normPoints();
+  const contours={
+    mouth:traceOneFeature(img,p.mouth.x,p.mouth.y,"mouth"),
+    leftEye:traceOneFeature(img,p.leftEye.x,p.leftEye.y,"eye"),
+    rightEye:traceOneFeature(img,p.rightEye.x,p.rightEye.y,"eye")
+  };
+  return contours;
+}
+
+function traceOneFeature(img,nx,ny,type){
+  const w=img.width,h=img.height,d=img.data;
+  const scale=type==="mouth" ? Number(state.controls.mouthSearchScale||0.95) : Number(state.controls.eyeSearchScale||0.90);
+  const boxW=Math.round((type==="mouth"?0.16:0.13)*w*scale);
+  const boxH=Math.round((type==="mouth"?0.09:0.075)*h*scale);
+  const cx=Math.round(nx*w),cy=Math.round(ny*h);
+  const x0=clamp(cx-boxW,0,w-1)|0,x1=clamp(cx+boxW,0,w-1)|0;
+  const y0=clamp(cy-boxH,0,h-1)|0,y1=clamp(cy+boxH,0,h-1)|0;
+  const darkSens=Number(state.controls.lineDarkSensitivity||2.2);
+
+  let pts=[];
+  for(let y=y0+1;y<y1-1;y++){
+    for(let x=x0+1;x<x1-1;x++){
+      const i=(y*w+x)*4;
+      if(d[i+3]<10)continue;
+      const L=luma(d[i],d[i+1],d[i+2]);
+      const Lx1=luma(d[i-4],d[i-3],d[i-2]);
+      const Lx2=luma(d[i+4],d[i+5],d[i+6]);
+      const Ly1=luma(d[i-w*4],d[i-w*4+1],d[i-w*4+2]);
+      const Ly2=luma(d[i+w*4],d[i+w*4+1],d[i+w*4+2]);
+      const edge=Math.abs(Lx2-Lx1)+Math.abs(Ly2-Ly1);
+      const dark=clamp((130-L)/(80/darkSens),0,1);
+      const edgeScore=clamp(edge/(55/darkSens),0,1);
+      const ex=(x-cx)/boxW,ey=(y-cy)/boxH;
+      const local=clamp(1-Math.sqrt(ex*ex+ey*ey),0,1);
+      const score=(dark*0.58+edgeScore*0.42)*local;
+      if(score>0.34){
+        pts.push({x,y,score});
+      }
+    }
+  }
+
+  // Keep the densest/local line cluster by bounding around weighted center.
+  if(pts.length<12){
+    return fallbackContour(cx,cy,boxW*.45,boxH*.35,type);
+  }
+  let sx=0,sy=0,sw=0;
+  pts.forEach(p=>{sx+=p.x*p.score;sy+=p.y*p.score;sw+=p.score;});
+  const ccx=sx/sw, ccy=sy/sw;
+
+  const radius=Math.max(8,Number(state.controls.lineConnect||6));
+  pts=pts.filter(p=>Math.hypot(p.x-ccx,p.y-ccy)<Math.max(boxW,boxH)*0.72);
+
+  if(pts.length<12){
+    return fallbackContour(cx,cy,boxW*.45,boxH*.35,type);
+  }
+
+  // Convert edge cloud to polar contour: for each angle keep farthest strong point.
+  const bins=72;
+  const binPts=new Array(bins).fill(0).map(()=>null);
+  pts.forEach(p=>{
+    const ang=Math.atan2(p.y-ccy,p.x-ccx);
+    let b=Math.floor(((ang+Math.PI)/(Math.PI*2))*bins);
+    b=clamp(b,0,bins-1)|0;
+    const dist=Math.hypot(p.x-ccx,p.y-ccy);
+    if(!binPts[b] || dist>binPts[b].dist) binPts[b]={x:p.x,y:p.y,dist,score:p.score};
+  });
+
+  let contour=[];
+  for(let i=0;i<bins;i++){
+    let p=binPts[i];
+    if(!p){
+      // interpolate from nearest neighbors
+      let l=null,r=null;
+      for(let k=1;k<bins;k++){
+        if(!l && binPts[(i-k+bins)%bins]) l=binPts[(i-k+bins)%bins];
+        if(!r && binPts[(i+k)%bins]) r=binPts[(i+k)%bins];
+        if(l&&r)break;
+      }
+      if(l&&r)p={x:(l.x+r.x)/2,y:(l.y+r.y)/2,dist:(l.dist+r.dist)/2,score:.5};
+    }
+    if(p)contour.push({x:p.x,y:p.y});
+  }
+
+  contour=smoothContour(contour,2);
+  return {type,cx:ccx,cy:ccy,points:contour,raw:pts};
+}
+
+function fallbackContour(cx,cy,rx,ry,type){
+  const pts=[];
+  const n=64;
+  for(let i=0;i<n;i++){
+    const a=i/n*Math.PI*2;
+    pts.push({x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry});
+  }
+  return {type,cx,cy,points:pts,raw:[]};
+}
+
+function smoothContour(points,passes){
+  let pts=points.slice();
+  for(let p=0;p<passes;p++){
+    pts=pts.map((pt,i)=>{
+      const a=pts[(i-1+pts.length)%pts.length];
+      const b=pts[(i+1)%pts.length];
+      return {x:(a.x+pt.x*2+b.x)/4,y:(a.y+pt.y*2+b.y)/4};
+    });
+  }
+  return pts;
+}
+
+function contourToMask(contour,w,h,grow=3){
+  const mask=createMask(w,h);
+  const g=mask.getContext("2d");
+  g.save();
+  g.fillStyle="#fff";
+  g.beginPath();
+  contour.points.forEach((p,i)=>{if(i===0)g.moveTo(p.x,p.y);else g.lineTo(p.x,p.y);});
+  g.closePath();
+  g.fill();
+  if(grow>0){
+    g.lineJoin="round";
+    g.lineCap="round";
+    g.strokeStyle="#fff";
+    g.lineWidth=grow*2;
+    g.stroke();
+  }
+  g.restore();
+  return mask;
+}
+
+function refinePointsFromContours(){
+  if(!state.contours)return;
+  const w=state.image.width,h=state.image.height;
+  const upd=(key,c)=>{
+    if(!c)return;
+    state.points[key]={x:clamp(c.cx/w,0,1),y:clamp(c.cy/h,0,1)};
+  };
+  upd("mouth",state.contours.mouth);
+  upd("leftEye",state.contours.leftEye);
+  upd("rightEye",state.contours.rightEye);
+}
+
+function applyContourMasksToLayers(){
+  if(!state.image||!state.contours)return;
+  const w=state.image.width,h=state.image.height;
+  const src=document.createElement("canvas");
+  src.width=w;src.height=h;
+  src.getContext("2d").drawImage(state.image,0,0);
+
+  const p=normPoints();
+  const faceMask=createMask(w,h);
+  const hairMask=createMask(w,h);
+  const neckMask=createMask(w,h);
+  drawEllipseMask(faceMask,p.face.x*w,(p.face.y+0.05)*h,0.22*w,0.25*h);
+  drawEllipseMask(hairMask,p.hair.x*w,(p.hair.y+0.10)*h,0.30*w,0.24*h);
+  drawEllipseMask(neckMask,p.neck.x*w,p.neck.y*h,0.10*w,0.08*h);
+
+  const mouthMask=contourToMask(state.contours.mouth,w,h,Number(state.controls.lineConnect||6));
+  const leftEyeMask=contourToMask(state.contours.leftEye,w,h,Number(state.controls.lineConnect||6));
+  const rightEyeMask=contourToMask(state.contours.rightEye,w,h,Number(state.controls.lineConnect||6));
+
+  const inpainted=inpaintByAverageColors(src,[faceMask,hairMask,leftEyeMask,rightEyeMask,mouthMask,neckMask]);
+
+  state.layers={
+    base:src,
+    inpainted,
+    masks:{face:faceMask,hair:hairMask,leftEye:leftEyeMask,rightEye:rightEyeMask,mouth:mouthMask,neck:neckMask},
+    faceLayer:cutLayer(src,faceMask),
+    hairLayer:cutLayer(src,hairMask),
+    leftEyeLayer:cutLayer(src,leftEyeMask),
+    rightEyeLayer:cutLayer(src,rightEyeMask),
+    mouthLayer:cutLayer(src,mouthMask),
+    neckLayer:cutLayer(src,neckMask),
+    width:w,
+    height:h
+  };
+}
+
+function generatePartsFromContourLayers(){
+  if(!state.layers) applyContourMasksToLayers();
+  const L=state.layers;
+  if(!L)return;
+  const src=L.base;
+  state.parts={
+    original:cloneCanvas(src),
+    base_inpainted:cloneCanvas(L.inpainted),
+    face:cloneCanvas(L.faceLayer),
+    front_hair:cloneCanvas(L.hairLayer),
+    left_eye:cloneCanvas(L.leftEyeLayer),
+    right_eye:cloneCanvas(L.rightEyeLayer),
+    mouth:cloneCanvas(L.mouthLayer),
+    neck:cloneCanvas(L.neckLayer),
+    contour_mouth:maskToPreview(L.masks.mouth,"rgba(255,90,120,.95)"),
+    contour_left_eye:maskToPreview(L.masks.leftEye,"rgba(100,180,255,.95)"),
+    contour_right_eye:maskToPreview(L.masks.rightEye,"rgba(100,180,255,.95)")
+  };
+  state.partsPreviewOpen=true;
+  renderPartsPreview();
 }
 
 function generateLocalSegmentation(){
@@ -1895,6 +2141,29 @@ function smoothStep(a,b,x){const t=clamp((x-a)/(b-a+.0001),0,1);return t*t*(3-2*
 function sCurve(t){return t*t*(3-2*t);}
 
 
+
+function drawContourOverlay(g,r){
+  if(!state.contours||!state.controls.showGuideCircles)return;
+  const sx=r.w/state.image.width, sy=r.h/state.image.height;
+  const draw=(c,color)=>{
+    if(!c||!c.points)return;
+    g.save();
+    g.strokeStyle=color;
+    g.lineWidth=2;
+    g.beginPath();
+    c.points.forEach((p,i)=>{
+      const x=r.x+p.x*sx,y=r.y+p.y*sy;
+      if(i===0)g.moveTo(x,y);else g.lineTo(x,y);
+    });
+    g.closePath();
+    g.stroke();
+    g.restore();
+  };
+  draw(state.contours.mouth,"rgba(255,90,130,.9)");
+  draw(state.contours.leftEye,"rgba(126,231,255,.9)");
+  draw(state.contours.rightEye,"rgba(126,231,255,.9)");
+}
+
 function drawSegmentationOverlay(g,r){
   const S=state.segmentation;
   if(!S)return;
@@ -2014,10 +2283,10 @@ function openObs(q){
   fitObs();
 }
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"3.5",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"3.6",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v35",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v35");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v36",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v36");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
