@@ -16,9 +16,9 @@ const labels={
   eyeLCenter:"左目中心",eyeLCornerIn:"左目頭",eyeLCornerOut:"左目尻",eyeLUpper:"左上まぶた",eyeLLower:"左下まぶた",
   eyeRCenter:"右目中心",eyeRCornerIn:"右目頭",eyeRCornerOut:"右目尻",eyeRUpper:"右上まぶた",eyeRLower:"右下まぶた",
   mouthCenter:"口中心",mouthLeft:"口左",mouthRight:"口右",mouthUpper:"口上",mouthLower:"口下",
-  bangsRootL:"左前髪根元",bangsTipL:"左前髪先",bangsRootR:"右前髪根元",bangsTipR:"右前髪先",
-  sideHairRootL:"左横髪根元",sideHairTipL:"左横髪先",sideHairRootR:"右横髪根元",sideHairTipR:"右横髪先",
-  backHairRoot:"後ろ髪根元",backHairTip:"後ろ髪先",
+  bangsRootL:"左前髪根元",bangsBendL1:"左前髪曲1",bangsBendL2:"左前髪曲2",bangsTipL:"左前髪先",bangsRootR:"右前髪根元",bangsBendR1:"右前髪曲1",bangsBendR2:"右前髪曲2",bangsTipR:"右前髪先",
+  sideHairRootL:"左横髪根元",sideHairBendL1:"左横髪曲1",sideHairBendL2:"左横髪曲2",sideHairTipL:"左横髪先",sideHairRootR:"右横髪根元",sideHairBendR1:"右横髪曲1",sideHairBendR2:"右横髪曲2",sideHairTipR:"右横髪先",
+  backHairRoot:"後ろ髪根元",backHairBend1:"後ろ髪曲1",backHairBend2:"後ろ髪曲2",backHairTip:"後ろ髪先",
   face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",hair:"髪"
 };
 const colors={
@@ -27,12 +27,12 @@ const colors={
   eyeLCenter:"#ff66c4",eyeLCornerIn:"#ff66c4",eyeLCornerOut:"#ff66c4",eyeLUpper:"#ff66c4",eyeLLower:"#ff66c4",
   eyeRCenter:"#ff66c4",eyeRCornerIn:"#ff66c4",eyeRCornerOut:"#ff66c4",eyeRUpper:"#ff66c4",eyeRLower:"#ff66c4",
   mouthCenter:"#ff9f43",mouthLeft:"#ff9f43",mouthRight:"#ff9f43",mouthUpper:"#ff9f43",mouthLower:"#ff9f43",
-  bangsRootL:"#a29bfe",bangsTipL:"#c77dff",bangsRootR:"#a29bfe",bangsTipR:"#c77dff",
-  sideHairRootL:"#a29bfe",sideHairTipL:"#c77dff",sideHairRootR:"#a29bfe",sideHairTipR:"#c77dff",backHairRoot:"#a29bfe",backHairTip:"#c77dff"
+  bangsRootL:"#a29bfe",bangsBendL1:"#b98cff",bangsBendL2:"#b98cff",bangsTipL:"#c77dff",bangsRootR:"#a29bfe",bangsBendR1:"#b98cff",bangsBendR2:"#b98cff",bangsTipR:"#c77dff",
+  sideHairRootL:"#a29bfe",sideHairBendL1:"#b98cff",sideHairBendL2:"#b98cff",sideHairTipL:"#c77dff",sideHairRootR:"#a29bfe",sideHairBendR1:"#b98cff",sideHairBendR2:"#b98cff",sideHairTipR:"#c77dff",backHairRoot:"#a29bfe",backHairBend1:"#b98cff",backHairBend2:"#b98cff",backHairTip:"#c77dff"
 };
 
 const projectState={
-  version:"4.7",
+  version:"4.8",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -689,49 +689,58 @@ function closestOnPolyline(x,y,pts,closed=false){
   }
   return best;
 }
+
 function structureDefs(){
-  // v47: ピンは「目印」ではなく、メッシュを打つための輪郭線/可動線として読む。
-  // closed loop = その内側/周辺に細かい面を作る。chain = root→bend→tip の髪束・首線として細かくサンプルする。
+  // v48: 全面格子は禁止。ユーザーのピン列を「輪郭線・可動線」として読む。
+  // 口/目は閉じるための上下線、髪は root→bend→bend→tip のチェーン、外周はキャラマスク。
+  const chain=(arr)=>arr.filter(k=>projectState.points&&projectState.points[k]);
   return [
-    {id:'characterOuter',type:'loop',role:'outer',keys:['contourTop','contourUpperR','contourMidR','contourLowerR','shoulderR','bodyR','bodyBottom','bodyL','shoulderL','contourLowerL','contourMidL','contourUpperL'],closed:true,color:'outer',steps:10,band:.030},
-    {id:'mouthOuter',type:'loop',role:'mouth',keys:['mouthLeft','mouthUpper','mouthRight','mouthLower'],closed:true,color:'mouth',steps:18,band:.018},
-    {id:'eyeLLoop',type:'loop',role:'eyeL',keys:['eyeLCornerIn','eyeLUpper','eyeLCornerOut','eyeLLower'],closed:true,color:'eye',steps:18,band:.014},
-    {id:'eyeRLoop',type:'loop',role:'eyeR',keys:['eyeRCornerIn','eyeRUpper','eyeRCornerOut','eyeRLLower'.replace('eyeRL','eyeR')],closed:true,color:'eye',steps:18,band:.014},
-    {id:'faceContour',type:'loop',role:'face',keys:['headTop','templeR','chin','templeL'],closed:true,color:'face',steps:16,band:.026},
-    {id:'faceAxis',type:'chain',role:'axis',keys:['headTop','chin','neck','body'],closed:false,color:'axis',steps:14,band:.018},
-    {id:'bangsL',type:'chain',role:'hair',keys:['bangsRootL','bangsTipL'],closed:false,color:'hair',steps:20,band:.020},
-    {id:'bangsR',type:'chain',role:'hair',keys:['bangsRootR','bangsTipR'],closed:false,color:'hair',steps:20,band:.020},
-    {id:'sideHairL',type:'chain',role:'hair',keys:['sideHairRootL','sideHairTipL'],closed:false,color:'hair',steps:22,band:.026},
-    {id:'sideHairR',type:'chain',role:'hair',keys:['sideHairRootR','sideHairTipR'],closed:false,color:'hair',steps:22,band:.026},
-    {id:'backHair',type:'chain',role:'hair',keys:['backHairRoot','backHairTip'],closed:false,color:'hair',steps:24,band:.030}
+    {id:'characterOuter',type:'loop',role:'outer',keys:chain(['contourTop','contourUpperR','contourMidR','contourLowerR','shoulderR','bodyR','bodyBottom','bodyL','shoulderL','contourLowerL','contourMidL','contourUpperL']),closed:true,color:'outer',steps:14,band:.018,fill:true,rings:7},
+    {id:'mouthOuter',type:'loop',role:'mouth',keys:chain(['mouthLeft','mouthUpper','mouthRight','mouthLower']),closed:true,color:'mouth',steps:24,band:.020,fill:true,rings:6},
+    {id:'mouthUpperLine',type:'chain',role:'mouth',keys:chain(['mouthLeft','mouthUpper','mouthRight']),closed:false,color:'mouthLimit',steps:22,band:.010,ribbon:true,lanes:5},
+    {id:'mouthLowerLine',type:'chain',role:'mouth',keys:chain(['mouthLeft','mouthLower','mouthRight']),closed:false,color:'mouthLimit',steps:22,band:.010,ribbon:true,lanes:5},
+    {id:'eyeLLoop',type:'loop',role:'eyeL',keys:chain(['eyeLCornerIn','eyeLUpper','eyeLCornerOut','eyeLLower']),closed:true,color:'eye',steps:24,band:.014,fill:true,rings:5},
+    {id:'eyeLUpperLine',type:'chain',role:'eyeL',keys:chain(['eyeLCornerIn','eyeLUpper','eyeLCornerOut']),closed:false,color:'eyeLimit',steps:22,band:.008,ribbon:true,lanes:5},
+    {id:'eyeLLowerLine',type:'chain',role:'eyeL',keys:chain(['eyeLCornerIn','eyeLLower','eyeLCornerOut']),closed:false,color:'eyeLimit',steps:22,band:.008,ribbon:true,lanes:5},
+    {id:'eyeRLoop',type:'loop',role:'eyeR',keys:chain(['eyeRCornerIn','eyeRUpper','eyeRCornerOut','eyeRLower']),closed:true,color:'eye',steps:24,band:.014,fill:true,rings:5},
+    {id:'eyeRUpperLine',type:'chain',role:'eyeR',keys:chain(['eyeRCornerIn','eyeRUpper','eyeRCornerOut']),closed:false,color:'eyeLimit',steps:22,band:.008,ribbon:true,lanes:5},
+    {id:'eyeRLowerLine',type:'chain',role:'eyeR',keys:chain(['eyeRCornerIn','eyeRLower','eyeRCornerOut']),closed:false,color:'eyeLimit',steps:22,band:.008,ribbon:true,lanes:5},
+    {id:'faceContour',type:'loop',role:'face',keys:chain(['headTop','templeR','chin','templeL']),closed:true,color:'face',steps:22,band:.020,fill:true,rings:5},
+    {id:'faceAxis',type:'chain',role:'axis',keys:chain(['headTop','chin','neck','body']),closed:false,color:'axis',steps:18,band:.012,ribbon:true,lanes:5},
+    {id:'bangsL',type:'chain',role:'hair',keys:chain(['bangsRootL','bangsBendL1','bangsBendL2','bangsTipL']),closed:false,color:'hair',steps:20,band:.018,ribbon:true,lanes:7},
+    {id:'bangsR',type:'chain',role:'hair',keys:chain(['bangsRootR','bangsBendR1','bangsBendR2','bangsTipR']),closed:false,color:'hair',steps:20,band:.018,ribbon:true,lanes:7},
+    {id:'sideHairL',type:'chain',role:'hair',keys:chain(['sideHairRootL','sideHairBendL1','sideHairBendL2','sideHairTipL']),closed:false,color:'hair',steps:24,band:.024,ribbon:true,lanes:7},
+    {id:'sideHairR',type:'chain',role:'hair',keys:chain(['sideHairRootR','sideHairBendR1','sideHairBendR2','sideHairTipR']),closed:false,color:'hair',steps:24,band:.024,ribbon:true,lanes:7},
+    {id:'backHair',type:'chain',role:'hair',keys:chain(['backHairRoot','backHairBend1','backHairBend2','backHairTip']),closed:false,color:'hair',steps:28,band:.030,ribbon:true,lanes:7}
   ];
 }
 
 function pinExists(keys){
   const p=projectState.points||{};
-  return keys.every(k=>p[k]&&Number.isFinite(p[k].x)&&Number.isFinite(p[k].y));
+  return keys&&keys.length>=2&&keys.every(k=>p[k]&&Number.isFinite(p[k].x)&&Number.isFinite(p[k].y));
 }
-function quant(v,step=.001){return Math.round(clamp(v,0,1)/step)*step;}
-function addCoord(set,v){ if(Number.isFinite(v))set.add(quant(v)); }
-function addAround(set,v,band,levels=3){
-  addCoord(set,v);
-  for(let i=1;i<=levels;i++){ addCoord(set,v+band*i/levels); addCoord(set,v-band*i/levels); }
-}
+function quant(v,step=.0005){return Math.round(clamp(v,0,1)/step)*step;}
 function segmentSamples(keys,closed=false,steps=8){
   const p=projectState.points||{};
-  const pts=keys.map(k=>p[k]).filter(Boolean);
-  if(pts.length<2)return [];
+  const anchors=keys.map(k=>p[k]).filter(Boolean);
+  if(anchors.length<2)return [];
   const out=[];
-  const n=pts.length-(closed?0:1);
+  const n=anchors.length-(closed?0:1);
   for(let i=0;i<n;i++){
-    const a=pts[i],b=pts[(i+1)%pts.length];
+    const a=anchors[i],b=anchors[(i+1)%anchors.length];
     const dx=b.x-a.x,dy=b.y-a.y;
     const len=Math.max(.0001,Math.hypot(dx,dy));
     const nx=-dy/len,ny=dx/len;
-    for(let s=0;s<=steps;s++){
+    for(let s=0;s<steps;s++){
       const t=s/steps;
       out.push({x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t),nx,ny,t,seg:i});
     }
+  }
+  if(!closed){
+    const last=anchors[anchors.length-1];
+    const prev=anchors[anchors.length-2]||last;
+    const dx=last.x-prev.x,dy=last.y-prev.y,len=Math.max(.0001,Math.hypot(dx,dy));
+    out.push({x:last.x,y:last.y,nx:-dy/len,ny:dx/len,t:1,seg:anchors.length-2});
   }
   return out;
 }
@@ -744,6 +753,21 @@ function pointInPolygon(x,y,poly){
     if(hit)inside=!inside;
   }
   return inside;
+}
+function polyCentroid(points){
+  if(!points||!points.length)return {x:.5,y:.5};
+  let x=0,y=0;points.forEach(p=>{x+=p.x;y+=p.y;});
+  return {x:x/points.length,y:y/points.length};
+}
+function closestOnPolyline(x,y,pts,closed=false){
+  let best={d:Infinity,t:0,x:0,y:0,seg:0};
+  if(!pts||pts.length<2)return best;
+  const n=closed?pts.length:pts.length-1;
+  for(let i=0;i<n;i++){
+    const r=distToSegment(x,y,pts[i],pts[(i+1)%pts.length]);
+    if(r.d<best.d)best={...r,seg:i};
+  }
+  return best;
 }
 function nearestStructureDistance(x,y,structures){
   let best=Infinity, role='base';
@@ -760,15 +784,26 @@ function generateMesh(showStatus=true){
   const triangles=[];
   const edges=[];
   const byKey={};
+  const coordMap=new Map();
   const addVertex=(key,x,y,extra={})=>{
+    const qx=quant(x), qy=quant(y);
+    const mapKey=key || `${qx},${qy},${extra.role||extra.group||''}`;
+    if(key&&byKey[mapKey]!=null)return byKey[mapKey];
+    if(!key&&coordMap.has(mapKey))return coordMap.get(mapKey);
     const id=vertices.length;
-    const v={id,key,x:clamp(x,0,1),y:clamp(y,0,1),u:clamp(x,0,1),v:clamp(y,0,1),...extra};
+    const v={id,key:mapKey,x:clamp(x,0,1),y:clamp(y,0,1),u:clamp(x,0,1),v:clamp(y,0,1),...extra};
     vertices.push(v);
-    if(key)byKey[key]=id;
+    if(key)byKey[mapKey]=id; else coordMap.set(mapKey,id);
     return id;
   };
+  const addTri=(a,b,c,role)=>{
+    if(a==null||b==null||c==null||a===b||b===c||c===a)return;
+    const va=vertices[a],vb=vertices[b],vc=vertices[c];
+    const area=(vb.x-va.x)*(vc.y-va.y)-(vb.y-va.y)*(vc.x-va.x);
+    if(Math.abs(area)<1e-7)return;
+    triangles.push(area>0?[a,b,c,role]:[a,c,b,role]);
+  };
 
-  // 1) ピンを順番付きの輪郭線/可動線にする。
   const structures=[];
   structureDefs().forEach(def=>{
     if(!pinExists(def.keys))return;
@@ -776,70 +811,77 @@ function generateMesh(showStatus=true){
     if(pts.length<2)return;
     structures.push({...def,points:pts});
   });
-
-  // 2) 画像全体の均等メッシュではなく、ピン線の周辺に座標を大量注入する。
-  //    これで「目・口・顔輪郭・髪束」の線を避けず、線に沿って細かい三角面が打たれる。
-  const xs=new Set(), ys=new Set();
-  // 最低限の外枠と粗い支え。これは背景用ではなく、貼り絵が欠けないための支え。
-  for(let i=0;i<=18;i++)addCoord(xs,i/18);
-  for(let i=0;i<=24;i++)addCoord(ys,i/24);
-  Object.entries(p).forEach(([key,pt])=>{
-    if(!pt)return;
-    addAround(xs,pt.x,.010,4); addAround(ys,pt.y,.010,4);
-    addAround(xs,pt.x,.026,3); addAround(ys,pt.y,.026,3);
-  });
-  structures.forEach(st=>{
-    const band=st.band||.020;
-    st.points.forEach(pt=>{
-      // 線そのもの、線の内外、さらに少し外側を座標に入れる。
-      // メッシュ線がピン線を横切らず、ピン線に沿って走るようにする。
-      [0,.33,.66,1].forEach(k=>{
-        addAround(xs,pt.x+pt.nx*band*k,band*.16,1);
-        addAround(ys,pt.y+pt.ny*band*k,band*.16,1);
-        addAround(xs,pt.x-pt.nx*band*k,band*.16,1);
-        addAround(ys,pt.y-pt.ny*band*k,band*.16,1);
-      });
-    });
-  });
-  const xArr=[...xs].sort((a,b)=>a-b).filter((v,i,a)=>i===0||Math.abs(v-a[i-1])>.0015);
-  const yArr=[...ys].sort((a,b)=>a-b).filter((v,i,a)=>i===0||Math.abs(v-a[i-1])>.0015);
-
   const outer=structures.find(s=>s.id==='characterOuter');
   const outerPoly=outer?.points||null;
-  const grid=[];
-  for(let yi=0;yi<yArr.length;yi++){
-    grid[yi]=[];
-    for(let xi=0;xi<xArr.length;xi++){
-      const x=xArr[xi],y=yArr[yi];
-      const near=nearestStructureDistance(x,y,structures);
-      const inside=outerPoly?pointInPolygon(x,y,outerPoly):true;
-      grid[yi][xi]=addVertex(`mesh_${xi}_${yi}`,x,y,{group:'adaptive',inside,nearRole:near.role,nearDist:near.d});
+
+  // 1) 外周ピンの内側だけにキャラ土台メッシュ。背景付き画像でも四角全体へ線を敷かない。
+  if(outerPoly&&outerPoly.length>=3){
+    const c=polyCentroid(outerPoly);
+    const rings=Math.max(3,outer.rings||6);
+    const ringIds=[];
+    for(let r=0;r<=rings;r++){
+      const ratio=r/rings;
+      ringIds[r]=outerPoly.map((pt,i)=>addVertex(null,lerp(c.x,pt.x,ratio),lerp(c.y,pt.y,ratio),{group:'outerFill',role:'outer',structure:'characterOuter',ring:r}));
     }
-  }
-  for(let yi=0;yi<yArr.length-1;yi++){
-    for(let xi=0;xi<xArr.length-1;xi++){
-      const a=grid[yi][xi],b=grid[yi][xi+1],c=grid[yi+1][xi],d=grid[yi+1][xi+1];
-      const cx=(xArr[xi]+xArr[xi+1])*.5, cy=(yArr[yi]+yArr[yi+1])*.5;
-      const near=nearestStructureDistance(cx,cy,structures);
-      const inside=outerPoly?pointInPolygon(cx,cy,outerPoly):true;
-      const role=inside?near.role:'outside';
-      triangles.push([a,b,c,role]);
-      triangles.push([b,d,c,role]);
+    for(let r=0;r<rings;r++){
+      for(let i=0;i<outerPoly.length;i++){
+        const j=(i+1)%outerPoly.length;
+        addTri(ringIds[r][i],ringIds[r][j],ringIds[r+1][i],'outer');
+        addTri(ringIds[r][j],ringIds[r+1][j],ringIds[r+1][i],'outer');
+      }
     }
   }
 
-  // 3) ピン・輪郭サンプル専用頂点とエッジ。表示だけでなく、どの線を制御線にするかを保存する。
+  // 2) 目・口・顔などの閉じたループは「輪郭から中心へ」細かいリングメッシュを作る。
+  structures.filter(st=>st.fill&&st.id!=='characterOuter').forEach(st=>{
+    const c=polyCentroid(st.points);
+    const rings=Math.max(3,st.rings||5);
+    const ringIds=[];
+    for(let r=0;r<=rings;r++){
+      const ratio=r/rings;
+      ringIds[r]=st.points.map((pt,i)=>addVertex(null,lerp(c.x,pt.x,ratio),lerp(c.y,pt.y,ratio),{group:'loopFill',role:st.role,structure:st.id,ring:r}));
+    }
+    for(let r=0;r<rings;r++){
+      for(let i=0;i<st.points.length;i++){
+        const j=(i+1)%st.points.length;
+        addTri(ringIds[r][i],ringIds[r][j],ringIds[r+1][i],st.role);
+        addTri(ringIds[r][j],ringIds[r+1][j],ringIds[r+1][i],st.role);
+      }
+    }
+  });
+
+  // 3) 上まぶた/下まぶた、上唇/下唇、髪チェーンは線に沿ったリボンメッシュ。
+  structures.filter(st=>st.ribbon).forEach(st=>{
+    const lanes=Math.max(3,st.lanes||5);
+    const half=(lanes-1)/2;
+    const rows=[];
+    st.points.forEach((pt,i)=>{
+      rows[i]=[];
+      for(let l=0;l<lanes;l++){
+        const off=((l-half)/Math.max(1,half))*(st.band||.012);
+        rows[i][l]=addVertex(null,pt.x+pt.nx*off,pt.y+pt.ny*off,{group:'ribbon',role:st.role,structure:st.id,lane:l});
+      }
+    });
+    for(let i=0;i<rows.length-1;i++){
+      for(let l=0;l<lanes-1;l++){
+        addTri(rows[i][l],rows[i+1][l],rows[i][l+1],st.role);
+        addTri(rows[i+1][l],rows[i+1][l+1],rows[i][l+1],st.role);
+      }
+    }
+  });
+
+  // 4) ピンと制御線サンプルの表示/制御頂点。ピン打ちした意味をデータとして保持する。
   Object.entries(p).forEach(([key,pt])=>{
-    if(pt&&Number.isFinite(pt.x)&&Number.isFinite(pt.y))addVertex(`pin_${key}`,pt.x,pt.y,{group:'pin',pin:true,pinName:key});
+    if(pt&&Number.isFinite(pt.x)&&Number.isFinite(pt.y))addVertex(`pin_${key}`,pt.x,pt.y,{group:'pin',pin:true,pinName:key,role:'pin'});
   });
   structures.forEach(st=>{
     const ids=st.points.map((pt,i)=>addVertex(`${st.id}_${i}`,pt.x,pt.y,{group:'structure',structure:st.id,role:st.role,guide:true}));
-    for(let i=0;i<ids.length-(st.closed?0:1);i++)edges.push([ids[i],ids[(i+1)%ids.length],st.color||st.role]);
+    for(let i=0;i<ids.length-(st.closed?0:1);i++)edges.push([ids[i],ids[(i+1)%ids.length],st.color||st.role,st.id]);
     st.vertexIds=ids;
   });
   const edgeByPin=(a,b,group)=>{
     const ka=`pin_${a}`, kb=`pin_${b}`;
-    if(byKey[ka]!=null&&byKey[kb]!=null)edges.push([byKey[ka],byKey[kb],group]);
+    if(byKey[ka]!=null&&byKey[kb]!=null)edges.push([byKey[ka],byKey[kb],group,'pin']);
   };
   [
     ['mouthLeft','mouthUpper','mouth'],['mouthUpper','mouthRight','mouth'],['mouthRight','mouthLower','mouth'],['mouthLower','mouthLeft','mouth'],['mouthUpper','mouthLower','mouthLimit'],['mouthLeft','mouthRight','mouthLimit'],
@@ -847,15 +889,17 @@ function generateMesh(showStatus=true){
     ['eyeRCornerIn','eyeRUpper','eye'],['eyeRUpper','eyeRCornerOut','eye'],['eyeRCornerOut','eyeRLower','eye'],['eyeRLower','eyeRCornerIn','eye'],['eyeRUpper','eyeRLower','eyeLimit'],['eyeRCornerIn','eyeRCornerOut','eyeLimit'],
     ['headTop','templeL','face'],['headTop','templeR','face'],['templeL','chin','face'],['templeR','chin','face'],['headTop','chin','axis'],['chin','neck','neck'],['neck','body','body'],
     ['contourTop','contourUpperR','outer'],['contourUpperR','contourMidR','outer'],['contourMidR','contourLowerR','outer'],['contourLowerR','shoulderR','outer'],['shoulderR','bodyR','outer'],['bodyR','bodyBottom','outer'],['bodyBottom','bodyL','outer'],['bodyL','shoulderL','outer'],['shoulderL','contourLowerL','outer'],['contourLowerL','contourMidL','outer'],['contourMidL','contourUpperL','outer'],['contourUpperL','contourTop','outer'],
-    ['bangsRootL','bangsTipL','hair'],['bangsRootR','bangsTipR','hair'],['sideHairRootL','sideHairTipL','hair'],['sideHairRootR','sideHairTipR','hair'],['backHairRoot','backHairTip','hair']
+    ['bangsRootL','bangsBendL1','hair'],['bangsBendL1','bangsBendL2','hair'],['bangsBendL2','bangsTipL','hair'],['bangsRootR','bangsBendR1','hair'],['bangsBendR1','bangsBendR2','hair'],['bangsBendR2','bangsTipR','hair'],
+    ['sideHairRootL','sideHairBendL1','hair'],['sideHairBendL1','sideHairBendL2','hair'],['sideHairBendL2','sideHairTipL','hair'],['sideHairRootR','sideHairBendR1','hair'],['sideHairBendR1','sideHairBendR2','hair'],['sideHairBendR2','sideHairTipR','hair'],
+    ['backHairRoot','backHairBend1','hair'],['backHairBend1','backHairBend2','hair'],['backHairBend2','backHairTip','hair']
   ].forEach(e=>edgeByPin(e[0],e[1],e[2]));
 
   projectState.mesh={
-    version:'v47-pin-driven-dense-adaptive-mesh',
-    xCount:xArr.length,yCount:yArr.length,vertices,triangles,edges,structures,
-    notes:'ユーザーが置いた外周・目・口・髪ピンを制御線として、その周辺に細かい実メッシュを大量生成する。全面均等メッシュではなくピン線追従型。'
+    version:'v48-pin-line-local-dense-mesh',
+    vertices,triangles,edges,structures,
+    notes:'全面格子を廃止。外周ピン内側、目/口ループ、上下線、髪チェーンの周辺だけに細密メッシュを生成。ピンを認識そのものとして扱う。'
   };
-  if(showStatus)setStatus('cutStatus',`ピン線追従メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length} / 格子${xArr.length}x${yArr.length}`);
+  if(showStatus)setStatus('cutStatus',`v48局所メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length}`);
   updateProjectReadout();
 }
 
