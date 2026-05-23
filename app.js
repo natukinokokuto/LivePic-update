@@ -17,8 +17,8 @@ const state={
   controls:{
     meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
-    mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
-    blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
+    mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
+    blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
     breath:5,trackingSpeed:0.20
   },
   track:{yaw:0,mouth:0,blink:0,hasFace:false},
@@ -80,6 +80,8 @@ function wire(){
   document.getElementById("rebuildLayersBtn").onclick=buildAutoMasksAndLayers;
   document.getElementById("analyzeMouthBtn").onclick=()=>rebuildSpecificContour("mouth");
   document.getElementById("analyzeEyesBtn").onclick=()=>rebuildSpecificContour("eyes");
+  document.getElementById("sampleRigBtn").onclick=applySampleRigPreset;
+  document.getElementById("forceMotionBtn").onclick=()=>{state.manual.talking=1.6;triggerBlink(true);state.autoYaw=true;document.getElementById("autoYawBtn").textContent="顔向き自動 ON";};
   document.getElementById("resetViewBtn").onclick=()=>{state.view.zoom=1;state.view.panX=0;state.view.panY=0;updateZoomUi();};
   document.getElementById("motionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("motionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
   document.getElementById("trackingBtn").onclick=toggleTracking;
@@ -133,13 +135,38 @@ function applyPreset(){
   Object.assign(state.controls,{
     meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
-    mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
-    blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
+    mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
+    blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
     breath:5,trackingSpeed:0.20
   });
   updateLabels();
   alert("Live2D寄せプリセットを適用しました");
 }
+
+function applySampleRigPreset(){
+  // Tuned for the bundled black-haired sample character.
+  Object.assign(state.controls,{
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.72,partWeights:true,partSeparation:0.40,
+    live2dLayerMode:true,layerOpacity:0.82,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,
+    maskFeather:18,inpaintStrength:0.82,showPins:false,showGuideCircles:false,showMaskOverlay:false,seamBlend:0.65,
+    contourMaskMode:true,mouthEdgeSensitivity:2.2,eyeEdgeSensitivity:2.0,contourGrow:10,contourSmooth:7,skinSampleRadius:26,
+    meshDensity:34,globalPower:1.05,faceRadius:215,yawBoost:1.35,manualYaw:0,
+    headShift:18,faceSquash:0.06,cheekPower:14,noseShift:10,chinFollow:16,hairLag:0.62,neckLag:0.42,
+    headRotate:3.2,neckFollow:0.30,hairDelay:0.42,
+    mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,
+    mouthLayerOpen:1.25,mouthLayerDrop:28,
+    blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,
+    eyeLayerClose:1.25,eyeLayerFollow:0.50,
+    breath:5,trackingSpeed:0.18
+  });
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  updateLabels();
+  buildAutoMasksAndLayers(false);
+  setMaskStatus("サンプル用リグ設定を適用しました","good");
+}
+
 
 function selectTool(b){
   document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));
@@ -253,8 +280,8 @@ function createSamplePngDataUrl(){
 }
 
 function loadSample(){
-  const dataUrl = createSamplePngDataUrl();
-  loadImage(dataUrl, "LivePic_sample_generated.png", true);
+  const bust = Date.now();
+  loadImage("./sample_character.png?v="+bust, "sample_character.png", true);
 }
 function loadImage(url,name,auto){
   const status=document.getElementById("status");
@@ -284,6 +311,10 @@ function loadImage(url,name,auto){
     if(status) status.textContent="画像読み込み失敗: "+name;
     setDebugStatus("image","load error");
     if(drop){drop.style.display="block";drop.textContent="画像を読み込めませんでした";}
+    if(name==="sample_character.png"){
+      const fallback = createSamplePngDataUrl();
+      loadImage(fallback, "LivePic_sample_generated_fallback.png", true);
+    }
   };
   img.src=url;
 }
@@ -541,8 +572,8 @@ function detectFeatureMask(src,nx,ny,type){
   const data=img.data;
 
   const cx=Math.round(nx*w), cy=Math.round(ny*h);
-  const boxW=Math.round((type==="mouth"?0.24:0.18)*w);
-  const boxH=Math.round((type==="mouth"?0.14:0.12)*h);
+  const boxW=Math.round((type==="mouth"?0.28:0.20)*w);
+  const boxH=Math.round((type==="mouth"?0.16:0.13)*h);
   const x0=clamp(cx-boxW/2,0,w-1)|0, y0=clamp(cy-boxH/2,0,h-1)|0;
   const x1=clamp(cx+boxW/2,0,w-1)|0, y1=clamp(cy+boxH/2,0,h-1)|0;
 
@@ -757,19 +788,34 @@ function drawCutoutLayers(g,r){
   drawLayer(L.faceLayer,p.face.x,p.face.y,0,0,headMove,headY,rot,opacity,1-Math.abs(yaw)*0.02);
   drawLayer(L.hairLayer,p.hair.x,p.hair.y,0,0,state.smooth.hairX*(r.w/900)*0.34,headY*.25,rot*.35,opacity*.72,1);
 
-  // Eyes move less than face, giving Live2D-ish independent parts.
+  // Eyes are independent layers. Blink closes by vertical scale around each eye.
   const eyeLag=Number(c.eyeLag||0.35);
-  drawLayer(L.leftEyeLayer,p.leftEye.x,p.leftEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
-  drawLayer(L.rightEyeLayer,p.rightEye.x,p.rightEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
+  const eyeFollow=Number(c.eyeLayerFollow||0.55);
+  const eClose=clamp(state.smooth.blink*Number(c.eyeLayerClose||1.1),0,0.92);
+  const drawEyeLayer=(layer,pt)=>{
+    const ex=r.x+pt.x*r.w, ey=r.y+pt.y*r.h;
+    g.save();
+    g.globalAlpha=opacity*.94;
+    g.translate(ex+headMove*eyeFollow*(1-eyeLag),ey+headY*.65);
+    g.rotate(rot*.35);
+    g.scale(1+state.smooth.mouth*.015,Math.max(0.08,1-eClose));
+    g.translate(-ex,-ey);
+    g.drawImage(layer,r.x,r.y,r.w,r.h);
+    g.restore();
+  };
+  drawEyeLayer(L.leftEyeLayer,p.leftEye);
+  drawEyeLayer(L.rightEyeLayer,p.rightEye);
 
-  // Mouth follows face with small local deformation; close state remains stable.
-  const mOpen=state.smooth.mouth;
+  // Mouth is an independent layer. It now visibly opens/closes instead of only dropping the jaw.
+  const mOpen=clamp(state.smooth.mouth,0,1);
   const mx=r.x+p.mouth.x*r.w,my=r.y+p.mouth.y*r.h;
+  const openScale=Number(c.mouthLayerOpen||1.15);
+  const drop=Number(c.mouthLayerDrop||22)*(r.w/900);
   g.save();
   g.globalAlpha=opacity;
-  g.translate(mx+headMove,my+headY+mOpen*10*(r.w/900));
-  g.rotate(rot*.25);
-  g.scale(1+mOpen*.08,1+mOpen*.20);
+  g.translate(mx+headMove*.88,my+headY+mOpen*drop);
+  g.rotate(rot*.22);
+  g.scale(1+mOpen*.10*openScale,Math.max(0.22,1+mOpen*.42*openScale));
   g.translate(-mx,-my);
   g.drawImage(L.mouthLayer,r.x,r.y,r.w,r.h);
   g.restore();
@@ -1140,15 +1186,15 @@ function openObs(q){
   fitObs();
 }
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.9",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"3.0",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v29",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v29");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v30",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v30");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength","seamBlend","mouthEdgeSensitivity","eyeEdgeSensitivity"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength","seamBlend","mouthEdgeSensitivity","eyeEdgeSensitivity","mouthLayerOpen","eyeLayerClose","eyeLayerFollow"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
