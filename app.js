@@ -12,14 +12,14 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,showMeshLines:true,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
+  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.85,partWeights:true,partSeparation:0.65,meshDensity:40,globalPower:2.15,faceRadius:270,yawBoost:3.2,manualYaw:0,
-    headShift:72,faceSquash:0.28,cheekPower:82,noseShift:64,chinFollow:78,hairLag:0.74,neckLag:0.58,
-    mouthSensitivity:10.5,mouthOpenPower:178,mouthRadius:112,jawDrop:125,vowelMix:0.75,roundMouth:48,
-    blinkSensitivity:10.0,blinkPower:138,eyeRadius:92,farEyeSquash:0.45,eyeLag:0.55,
-    breath:6,trackingSpeed:0.32
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
+    mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
+    blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
+    breath:5,trackingSpeed:0.20
   },
   track:{yaw:0,mouth:0,blink:0,hasFace:false},
   smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
@@ -123,14 +123,14 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.85,partWeights:true,partSeparation:0.65,meshDensity:40,globalPower:2.15,faceRadius:270,yawBoost:3.2,manualYaw:0,
-    headShift:72,faceSquash:0.28,cheekPower:82,noseShift:64,chinFollow:78,hairLag:0.74,neckLag:0.58,
-    mouthSensitivity:10.5,mouthOpenPower:178,mouthRadius:112,jawDrop:125,vowelMix:0.75,roundMouth:48,
-    blinkSensitivity:10.0,blinkPower:138,eyeRadius:92,farEyeSquash:0.45,eyeLag:0.55,
-    breath:6,trackingSpeed:0.32
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
+    mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
+    blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
+    breath:5,trackingSpeed:0.20
   });
   updateLabels();
-  alert("強変形プリセットを適用しました");
+  alert("Live2D寄せプリセットを適用しました");
 }
 
 function selectTool(b){
@@ -373,36 +373,84 @@ function draw(g,w,h,editor){
   g.imageSmoothingQuality="high";
   const r=imageRect(w,h,editor);
 
-  // Display guarantee: always draw the original image first if enabled.
-  if(state.controls.safeUnderlay || !state.controls.meshEnabled){
-    g.save();
-    g.globalAlpha = state.controls.meshEnabled ? 0.45 : 1.0;
-    g.drawImage(state.image,r.x,r.y,r.w,r.h);
-    g.restore();
-  }
+  // Always draw base. Live2D is layered, not a single violently warped sheet.
+  g.save();
+  g.globalAlpha = 1.0;
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
 
   if(state.controls.meshEnabled){
     try{
       g.save();
-      g.globalAlpha = Number(state.controls.meshOpacity ?? 0.85);
+      g.globalAlpha = Number(state.controls.meshOpacity ?? 0.82);
       drawWarpedMesh(g,r);
       g.restore();
       setDebugStatus("mesh","OK");
     }catch(err){
       console.error("mesh render failed", err);
       setDebugStatus("mesh","ERROR");
-      g.save();
-      g.globalAlpha = 1.0;
-      g.drawImage(state.image,r.x,r.y,r.w,r.h);
-      g.restore();
     }
   }else{
     setDebugStatus("mesh","OFF");
   }
 
+  if(state.controls.live2dLayerMode){
+    try{
+      drawLive2DLikeLayers(g,r);
+    }catch(err){
+      console.error("layer render failed", err);
+    }
+  }
+
   setDebugStatus("render","OK");
   if(state.debug&&editor)drawGuides(g,r);
   if(editor)drawPoints(g,r);
+}
+
+
+function drawLive2DLikeLayers(g,r){
+  const c=state.controls;
+  const p=normPoints();
+  const face=toPixel(p.face,r), neck=toPixel(p.neck,r), hair=toPixel(p.hair,r);
+  const scale=r.w/900;
+  const yaw=state.smooth.yaw;
+  const opacity=Number(c.layerOpacity||0.72);
+  const headMove=state.smooth.headX*scale*0.72;
+  const headY=state.smooth.headY*scale*0.55;
+  const rot=yaw*(Number(c.headRotate||4))*Math.PI/180;
+
+  // Neck subtle follow: local redraw, not whole-body distortion.
+  g.save();
+  g.globalAlpha=opacity*.38;
+  clipEllipse(g, neck.x+state.smooth.neckX*scale*.25, neck.y, 90*scale, 90*scale);
+  g.translate(state.smooth.neckX*scale*.18,0);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  // Head/face layer: small rotation and translation, not violent mesh deformation.
+  g.save();
+  g.globalAlpha=opacity;
+  clipEllipse(g, face.x+headMove, face.y+headY+35*scale, 190*scale, 250*scale);
+  g.translate(face.x+headMove, face.y+headY);
+  g.rotate(rot);
+  g.scale(1-Math.abs(yaw)*0.035,1+Math.abs(yaw)*0.015);
+  g.translate(-face.x, -face.y);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  // Hair delay layer: hair moves a little opposite/late.
+  g.save();
+  g.globalAlpha=opacity*.42;
+  clipEllipse(g, hair.x+state.smooth.hairX*scale*.28, hair.y+90*scale, 210*scale, 210*scale);
+  g.translate(state.smooth.hairX*scale*.30, state.smooth.headY*scale*.12);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+}
+
+function clipEllipse(g,cx,cy,rx,ry){
+  g.beginPath();
+  g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+  g.clip();
 }
 
 function drawWarpedMesh(g,r){
@@ -445,7 +493,7 @@ function drawWarpedMesh(g,r){
 
 function warpPoint(u,v,r){
   const p=normPoints();
-  const c=state.controls, gp=c.globalPower||1, scale=r.w/900;
+  const c=state.controls, gp=(c.safeDeform ? Math.min(c.globalPower||1,1.35) : (c.globalPower||1)), scale=r.w/900;
   let x=r.x+u*r.w,y=r.y+v*r.h;
 
   const face=toPixel(p.face,r),mouth=toPixel(p.mouth,r),chin=toPixel(p.chin,r),neck=toPixel(p.neck,r),hair=toPixel(p.hair,r);
@@ -645,16 +693,16 @@ function scheduleBlink(){state.nextBlink=performance.now()+2200+Math.random()*42
 function updateMotion(now){
   const c=state.controls,m=state.motion?1:0;
   let targetYaw=c.manualYaw/100;
-  if(state.autoYaw)targetYaw=Math.sin(state.t*.030)*0.92;
+  if(state.autoYaw)targetYaw=Math.sin(state.t*.026)*0.45;
   if(state.cameraOn)targetYaw=state.track.yaw;
-  targetYaw+=state.manual.yawKey*.9;
+  targetYaw+=state.manual.yawKey*.38;
   state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),c.trackingSpeed);
 
   const headTarget=state.smooth.yaw*c.headShift*m;
-  state.smooth.headX=lerp(state.smooth.headX,headTarget,.20);
-  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*2.0*m,.12);
-  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*.32,.16*(1-c.neckLag*.72));
-  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*.50,.15*(1-c.hairLag*.74));
+  state.smooth.headX=lerp(state.smooth.headX,headTarget,.16);
+  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*1.4*m,.10);
+  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*(c.neckFollow||0.35),.12*(1-c.neckLag*.55));
+  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*(c.hairDelay||0.45),.10*(1-c.hairLag*.50));
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
@@ -680,15 +728,15 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.5",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.6",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v25",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v25");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v26",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v26");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
