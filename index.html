@@ -161,13 +161,15 @@
     <label>メッシュ表示 <input id="showMesh" type="checkbox" checked></label>
     <label>メッシュ変形 <input id="meshWarp" type="checkbox" checked></label>
     <label>全体メッシュ強度 <span id="meshStrengthVal"></span></label>
-    <input id="meshStrength" type="range" min="0" max="1.5" step="0.05" value="0.55">
+    <input id="meshStrength" type="range" min="0" max="1.5" step="0.05" value="0.38">
+    <label>顔ゆがみ抑制 <span id="faceWarpSoftnessVal"></span></label>
+    <input id="faceWarpSoftness" type="range" min="0" max="1" step="0.05" value="0.65">
     <label>髪メッシュ強度 <span id="hairMeshStrengthVal"></span></label>
     <input id="hairMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.65">
     <label>口メッシュ強度 <span id="mouthMeshStrengthVal"></span></label>
     <input id="mouthMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
     <label>瞬きメッシュ強度 <span id="blinkMeshStrengthVal"></span></label>
-    <input id="blinkMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.75">
+    <input id="blinkMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
   </section>
 </main>
 
@@ -227,6 +229,8 @@
     <input id="mouthLayerAlpha" type="range" min="0" max="1" step="0.05" value="0.95">
     <label>保持 <span id="mouthHoldVal"></span></label>
     <input id="mouthHold" type="range" min="0.2" max="3" step="0.1" value="1.8">
+    <label>口中心連動 <span id="mouthLinkStrengthVal"></span></label>
+    <input id="mouthLinkStrength" type="range" min="0" max="1" step="0.05" value="1.0">
 
     <h2>目</h2>
     <label>閉じ <span id="eyeLayerCloseVal"></span></label>
@@ -237,6 +241,10 @@
     <input id="blinkHold" type="range" min="0.2" max="3" step="0.1" value="1.4">
     <label>笑顔目 <span id="eyeSmileVal"></span></label>
     <input id="eyeSmile" type="range" min="0" max="1" step="0.05" value="0.10">
+    <label>目中心連動 <span id="eyeLinkStrengthVal"></span></label>
+    <input id="eyeLinkStrength" type="range" min="0" max="1" step="0.05" value="1.0">
+    <label>瞬き形状補正 <span id="blinkShapeStrengthVal"></span></label>
+    <input id="blinkShapeStrength" type="range" min="0" max="1.5" step="0.05" value="1.0">
   </section>
 </main>
 

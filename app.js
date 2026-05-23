@@ -30,7 +30,7 @@ const colors={
 };
 
 const projectState={
-  version:"4.2",
+  version:"4.3",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -41,10 +41,10 @@ const projectState={
   inpainted:null,
   rig:{
     headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,
-    mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,
-    eyeLayerClose:1.75,eyeLayerAlpha:.95,blinkHold:1.4,eyeSmile:.10,
+    mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,mouthLinkStrength:1.0,
+    eyeLayerClose:1.75,eyeLayerAlpha:.95,blinkHold:1.4,eyeSmile:.10,eyeLinkStrength:1.0,blinkShapeStrength:1.0,
     lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:.95,eyeSearchScale:.90,
-    inpaintStrength:.85,showMasks:true,showPins:true,showMesh:true,meshWarp:true,meshStrength:.55,hairMeshStrength:.65,mouthMeshStrength:.85,blinkMeshStrength:.75
+    inpaintStrength:.85,showMasks:true,showPins:true,showMesh:true,meshWarp:true,meshStrength:.38,hairMeshStrength:.65,mouthMeshStrength:.85,blinkMeshStrength:.85,faceWarpSoftness:.65
   }
 };
 
@@ -114,7 +114,7 @@ function wire(){
   on("downloadPartsBtn", downloadParts);
   on("downloadProjectBtn", downloadProjectJson);
 
-  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins","showMesh","meshWarp","meshStrength","hairMeshStrength","mouthMeshStrength","blinkMeshStrength"].forEach(id=>{
+  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","mouthLinkStrength","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","eyeLinkStrength","blinkShapeStrength","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins","showMesh","meshWarp","meshStrength","hairMeshStrength","mouthMeshStrength","blinkMeshStrength","faceWarpSoftness"].forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
     el.addEventListener(el.type==="checkbox"?"change":"input",()=>{
@@ -261,8 +261,7 @@ function placePoint(e){
   if(!projectState.original)return;
   const rect=canvases.cut.getBoundingClientRect();
   const r=imageRect(canvases.cut.width,canvases.cut.height,true);
-  projectState.points[runtime.tool]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
-  syncLegacyPoints();
+  setPoint(runtime.tool, clamp((e.clientX-rect.left-r.x)/r.w,0,1), clamp((e.clientY-rect.top-r.y)/r.h,0,1), true);
   generateMesh();
   setStatus("cutStatus",`${labels[runtime.tool]||runtime.tool}を移動`);
 }
@@ -272,8 +271,7 @@ function updatePointFromEvent(key,e){
   if(!projectState.original||!projectState.points[key])return;
   const rect=canvases.cut.getBoundingClientRect();
   const r=imageRect(canvases.cut.width,canvases.cut.height,true);
-  projectState.points[key]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
-  syncLegacyPoints();
+  setPoint(key, clamp((e.clientX-rect.left-r.x)/r.w,0,1), clamp((e.clientY-rect.top-r.y)/r.h,0,1), true);
   generateMesh(false);
 }
 
@@ -303,10 +301,30 @@ window.addEventListener("keydown",e=>{
   else if(e.key==="ArrowUp")dy=-step;
   else if(e.key==="ArrowDown")dy=step;
   else return;
-  projectState.points[key].x=clamp(projectState.points[key].x+dx,0,1);
-  projectState.points[key].y=clamp(projectState.points[key].y+dy,0,1);
-  syncLegacyPoints();generateMesh(false);e.preventDefault();
+  setPoint(key, clamp(projectState.points[key].x+dx,0,1), clamp(projectState.points[key].y+dy,0,1), true);
+  generateMesh(false);e.preventDefault();
 });
+
+function setPoint(key,x,y,propagate=true){
+  const pts=projectState.points||{};
+  const old=pts[key]?{x:pts[key].x,y:pts[key].y}:null;
+  pts[key]={x,y};
+  if(propagate && old){
+    const dx=x-old.x, dy=y-old.y;
+    propagateLinkedPins(key,dx,dy);
+  }
+  syncLegacyPoints();
+}
+
+function propagateLinkedPins(key,dx,dy){
+  const p=projectState.points||{};
+  const move=(keys,rate=1)=>keys.forEach(k=>{ if(p[k] && k!==key){ p[k].x=clamp(p[k].x+dx*rate,0,1); p[k].y=clamp(p[k].y+dy*rate,0,1); }});
+  if(key==="eyeLCenter") move(["eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower"], projectState.rig.eyeLinkStrength??1);
+  if(key==="eyeRCenter") move(["eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower"], projectState.rig.eyeLinkStrength??1);
+  if(key==="mouthCenter") move(["mouthLeft","mouthRight","mouthUpper","mouthLower"], projectState.rig.mouthLinkStrength??1);
+  if(key==="headTop") move(["bangsRootL","bangsRootR","backHairRoot"], .55);
+  if(key==="chin") move(["neck"], .25);
+}
 
 function imageRect(w,h,editor=false){
   const img=projectState.original;
@@ -519,8 +537,8 @@ function renderPartsPreview(){
 function syncToLive(msg){setStatus("liveStatus",msg);updateProjectReadout();}
 function applyRigPreset(){Object.assign(projectState.rig,{headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,mouthLayerOpen:1.8,mouthLayerDrop:42,eyeLayerClose:1.75});updateControls();syncToLive("Rigプリセット適用");}
 function applyExpression(name){projectState.rig.eyeSmile=name==="smile"?.55:.10;updateControls();syncToLive(name==="smile"?"笑顔":"通常");}
-function testMouth(){runtime.manual.talking=1.8;runtime.manual.mouthUntil=performance.now()+projectState.rig.mouthHold*1000;runtime.smooth.mouth=1;}
-function testBlink(){runtime.manual.blinkBoost=1.6;runtime.manual.blinkUntil=performance.now()+projectState.rig.blinkHold*1000;runtime.smooth.blink=1;}
+function testMouth(){runtime.manual.talking=1.9;runtime.manual.mouthUntil=performance.now()+projectState.rig.mouthHold*1000;runtime.smooth.mouth=1;setStatus("rigStatus","口パクテスト：口中心を親に上下左右が連動します");}
+function testBlink(){runtime.manual.blinkBoost=2.2;runtime.manual.blinkUntil=performance.now()+projectState.rig.blinkHold*1000;runtime.smooth.blink=1;setStatus("rigStatus","瞬きテスト：目ピンの上下が中心へ閉じます");}
 function testMotion(){
   testMouth();
   testBlink();
@@ -574,63 +592,135 @@ function drawMouth(g,img,pt,r,tx,ty,rot,mouth){drawPart(g,img,pt,r,tx*.8,ty+mout
 function drawSynthetic(g,r,p,tx,ty,rot){
   const scale=r.w/900;
   const m=runtime.smooth.mouth;
-  const b=runtime.smooth.blink;
-  if(b>.04){
-    [p.leftEye,p.rightEye].forEach(pt=>{
-      const x=r.x+pt.x*r.w+tx*.55;
-      const y=r.y+pt.y*r.h+ty*.6;
-      g.save();
-      g.translate(x,y);
-      g.rotate(rot*.25);
-      g.fillStyle=`rgba(30,22,30,${.35+b*.45})`;
-      g.beginPath();
-      g.ellipse(0,0,45*scale,18*scale*b,0,0,Math.PI*2);
-      g.fill();
-      g.restore();
-    });
+  const b=clamp(runtime.smooth.blink*projectState.rig.eyeLayerClose+projectState.rig.eyeSmile*.15,0,.96);
+
+  // 瞬き：中心楕円ではなく、目頭/目尻/上下まぶたピンを使って閉じ線を描く。
+  if(b>.03){
+    drawBlinkLine(g,r,"L",tx,ty,rot,b);
+    drawBlinkLine(g,r,"R",tx,ty,rot,b);
   }
-  if(m>.04){
-    const x=r.x+p.mouth.x*r.w+tx*.8;
-    const y=r.y+p.mouth.y*r.h+ty+m*18*scale;
+
+  // 口パク：口ピンの上下左右から口内を生成。中心だけの楕円より形が合わせやすい。
+  if(m>.03 && p.mouthCenter){
+    const ml=p.mouthLeft||p.mouthCenter, mr=p.mouthRight||p.mouthCenter, mu=p.mouthUpper||p.mouthCenter, md=p.mouthLower||p.mouthCenter;
+    const lx=r.x+ml.x*r.w+tx*.8, rx=r.x+mr.x*r.w+tx*.8;
+    const uy=r.y+mu.y*r.h+ty, dy=r.y+md.y*r.h+ty + m*projectState.rig.mouthLayerDrop*scale*.45;
+    const cx=(lx+rx)/2, cy=(uy+dy)/2;
+    const rw=Math.max(8*scale,(rx-lx)/2*(1+m*.25));
+    const rh=Math.max(3*scale,(dy-uy)/2 + 9*scale*m*projectState.rig.mouthLayerOpen);
     g.save();
-    g.translate(x,y);
-    g.rotate(rot*.18);
-    g.fillStyle=`rgba(90,25,38,${.45+m*.40})`;
-    g.beginPath();
-    g.ellipse(0,0,28*scale,10*scale*(.5+m*1.1),0,0,Math.PI*2);
-    g.fill();
+    g.translate(cx,cy);g.rotate(rot*.18);
+    g.fillStyle=`rgba(86,22,38,${.42+m*.43})`;
+    g.beginPath();g.ellipse(0,0,rw,rh,0,0,Math.PI*2);g.fill();
+    g.strokeStyle=`rgba(255,170,190,${.22+m*.18})`;g.lineWidth=Math.max(1,2*scale);g.stroke();
     g.restore();
   }
+}
+
+function drawBlinkLine(g,r,side,tx,ty,rot,b){
+  const p=projectState.points;
+  const pre=side==="L"?"eyeL":"eyeR";
+  const inn=p[pre+"CornerIn"], out=p[pre+"CornerOut"], up=p[pre+"Upper"], low=p[pre+"Lower"], cen=p[pre+"Center"];
+  if(!inn||!out||!cen)return;
+  const ix=r.x+inn.x*r.w+tx*.55, iy=r.y+inn.y*r.h+ty*.6;
+  const ox=r.x+out.x*r.w+tx*.55, oy=r.y+out.y*r.h+ty*.6;
+  const cy=r.y+cen.y*r.h+ty*.6;
+  const uy=up? r.y+up.y*r.h+ty*.6 : cy-8;
+  const ly=low? r.y+low.y*r.h+ty*.6 : cy+8;
+  const midY=lerp((uy+ly)/2,cy,b);
+  const cx=(ix+ox)/2;
+  const width=Math.hypot(ox-ix,oy-iy);
+  g.save();
+  g.translate(cx,midY);
+  g.rotate(rot*.25 + Math.atan2(oy-iy,ox-ix));
+  g.strokeStyle=`rgba(28,18,30,${.30+b*.62})`;
+  g.lineWidth=Math.max(1.5, width*.045);
+  g.lineCap="round";
+  g.beginPath();
+  g.moveTo(-width/2,0);
+  g.quadraticCurveTo(0,(ly-uy)*.14*(1-b),width/2,0);
+  g.stroke();
+  if(b>.55){
+    g.strokeStyle=`rgba(255,235,245,${(b-.55)*.35})`;
+    g.lineWidth=Math.max(1,width*.018);
+    g.beginPath();g.moveTo(-width*.34,2);g.lineTo(width*.34,2);g.stroke();
+  }
+  g.restore();
 }
 
 
 function generateMesh(showStatus=true){
   const p=projectState.points||{};
   const vertices=[];
-  const add=(key,sourceKey=key)=>{ if(!p[sourceKey])return null; const id=vertices.length; vertices.push({id,key,x:p[sourceKey].x,y:p[sourceKey].y,source:sourceKey}); return id; };
   const byKey={};
-  ["headTop","chin","templeL","templeR","neck","body","eyeLCenter","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeRCenter","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","mouthCenter","mouthLeft","mouthRight","mouthUpper","mouthLower","bangsRootL","bangsTipL","bangsRootR","bangsTipR","sideHairRootL","sideHairTipL","sideHairRootR","sideHairTipR","backHairRoot","backHairTip"].forEach(k=>{const id=add(k); if(id!=null)byKey[k]=id;});
-  const makeMid=(key,a,b,t=.5)=>{ if(!p[a]||!p[b])return null; const id=vertices.length; vertices.push({id,key,x:lerp(p[a].x,p[b].x,t),y:lerp(p[a].y,p[b].y,t),source:key,auto:true}); byKey[key]=id; return id; };
-  makeMid("faceCenter","headTop","chin",.55);
-  makeMid("browLine","templeL","templeR",.5);
-  makeMid("upperFace","headTop","chin",.35);
-  makeMid("lowerFace","headTop","chin",.72);
+  const addVertex=(key,x,y,extra={})=>{ const id=vertices.length; vertices.push({id,key,x,y,source:key,...extra}); byKey[key]=id; return id; };
+  const add=(key)=>{ if(!p[key])return null; return addVertex(key,p[key].x,p[key].y); };
+  const mid=(key,a,b,t=.5,extra={})=>{ if(!p[a]||!p[b])return null; return addVertex(key,lerp(p[a].x,p[b].x,t),lerp(p[a].y,p[b].y,t),{auto:true,...extra}); };
+
+  ["headTop","chin","templeL","templeR","neck","body","eyeLCenter","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeRCenter","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","mouthCenter","mouthLeft","mouthRight","mouthUpper","mouthLower","bangsRootL","bangsTipL","bangsRootR","bangsTipR","sideHairRootL","sideHairTipL","sideHairRootR","sideHairTipR","backHairRoot","backHairTip"].forEach(add);
+  mid("faceCenter","headTop","chin",.55,{group:"face"});
+  mid("browLine","templeL","templeR",.5,{group:"face"});
+  mid("upperFace","headTop","chin",.35,{group:"face"});
+  mid("lowerFace","headTop","chin",.72,{group:"face"});
+
+  // 顔は荒い4枚だけだと歪みが出るため、顔内に補助点を増やして細かくする。
+  if(p.headTop&&p.chin&&p.templeL&&p.templeR){
+    const leftX=p.templeL.x, rightX=p.templeR.x, topY=p.headTop.y, bottomY=p.chin.y;
+    const cx=(p.headTop.x+p.chin.x+p.templeL.x+p.templeR.x)/4;
+    const cols=5, rows=6;
+    for(let iy=1;iy<rows;iy++){
+      const ty=iy/rows;
+      const widthScale=Math.sin(Math.PI*ty)*.92+.08;
+      for(let ix=1;ix<cols;ix++){
+        const tx=ix/cols;
+        const x=lerp(cx+(leftX-cx)*widthScale, cx+(rightX-cx)*widthScale, tx);
+        const y=lerp(topY,bottomY,ty);
+        addVertex(`faceGrid_${ix}_${iy}`,x,y,{auto:true,group:"faceGrid",ix,iy});
+      }
+    }
+  }
+
+  // 目と口も中心だけでなく中間点を足して、形が潰れすぎないようにする。
+  [["L","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeLCenter"],["R","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","eyeRCenter"]].forEach(([side,inn,out,up,low,cen])=>{
+    mid(`eye${side}_upperIn`,inn,up,.5,{group:"eye"});
+    mid(`eye${side}_upperOut`,up,out,.5,{group:"eye"});
+    mid(`eye${side}_lowerOut`,out,low,.5,{group:"eye"});
+    mid(`eye${side}_lowerIn`,low,inn,.5,{group:"eye"});
+  });
+  mid("mouthUpperL","mouthLeft","mouthUpper",.5,{group:"mouth"});
+  mid("mouthUpperR","mouthUpper","mouthRight",.5,{group:"mouth"});
+  mid("mouthLowerR","mouthRight","mouthLower",.5,{group:"mouth"});
+  mid("mouthLowerL","mouthLower","mouthLeft",.5,{group:"mouth"});
+
   const triangles=[]; const edges=[];
   const tri=(a,b,c,group="face")=>{ if(byKey[a]!=null&&byKey[b]!=null&&byKey[c]!=null)triangles.push([byKey[a],byKey[b],byKey[c],group]); };
   const edge=(a,b,group="line")=>{ if(byKey[a]!=null&&byKey[b]!=null)edges.push([byKey[a],byKey[b],group]); };
-  // 顔の大きな面
-  tri("headTop","templeL","faceCenter","face"); tri("headTop","faceCenter","templeR","face");
-  tri("templeL","chin","faceCenter","face"); tri("templeR","faceCenter","chin","face");
-  tri("chin","neck","faceCenter","neck"); tri("neck","body","faceCenter","body");
+
+  tri("headTop","templeL","upperFace","face"); tri("headTop","upperFace","templeR","face");
+  tri("templeL","lowerFace","upperFace","face"); tri("templeR","upperFace","lowerFace","face");
+  tri("templeL","chin","lowerFace","face"); tri("templeR","lowerFace","chin","face");
+  tri("chin","neck","lowerFace","neck"); tri("neck","body","lowerFace","body");
   edge("headTop","chin","axis"); edge("templeL","templeR","face"); edge("chin","neck","neck"); edge("neck","body","body");
-  // 目・口の局所面
+
+  // 顔グリッドの三角化
+  for(let iy=1;iy<5;iy++){
+    for(let ix=1;ix<4;ix++){
+      const a=`faceGrid_${ix}_${iy}`, b=`faceGrid_${ix+1}_${iy}`, c=`faceGrid_${ix}_${iy+1}`, d=`faceGrid_${ix+1}_${iy+1}`;
+      tri(a,b,c,"faceGrid"); tri(b,d,c,"faceGrid");
+    }
+  }
+
   [["L","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeLCenter"],["R","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","eyeRCenter"]].forEach(([side,inn,out,up,low,cen])=>{
-    tri(inn,up,cen,"eye"); tri(up,out,cen,"eye"); tri(out,low,cen,"eye"); tri(low,inn,cen,"eye");
-    edge(inn,out,"eye"); edge(up,low,"eye");
+    const ui=`eye${side}_upperIn`, uo=`eye${side}_upperOut`, lo=`eye${side}_lowerOut`, li=`eye${side}_lowerIn`;
+    tri(inn,ui,cen,"eye"); tri(ui,up,cen,"eye"); tri(up,uo,cen,"eye"); tri(uo,out,cen,"eye");
+    tri(out,lo,cen,"eye"); tri(lo,low,cen,"eye"); tri(low,li,cen,"eye"); tri(li,inn,cen,"eye");
+    edge(inn,out,"eye"); edge(up,low,"eye"); edge(inn,up,"eye"); edge(out,up,"eye"); edge(out,low,"eye"); edge(inn,low,"eye");
   });
-  tri("mouthLeft","mouthUpper","mouthCenter","mouth"); tri("mouthUpper","mouthRight","mouthCenter","mouth"); tri("mouthRight","mouthLower","mouthCenter","mouth"); tri("mouthLower","mouthLeft","mouthCenter","mouth");
-  edge("mouthLeft","mouthRight","mouth"); edge("mouthUpper","mouthLower","mouth");
-  // 髪束はroot/tipの三角面で揺れを持たせる
+
+  tri("mouthLeft","mouthUpperL","mouthCenter","mouth"); tri("mouthUpperL","mouthUpper","mouthCenter","mouth"); tri("mouthUpper","mouthUpperR","mouthCenter","mouth"); tri("mouthUpperR","mouthRight","mouthCenter","mouth");
+  tri("mouthRight","mouthLowerR","mouthCenter","mouth"); tri("mouthLowerR","mouthLower","mouthCenter","mouth"); tri("mouthLower","mouthLowerL","mouthCenter","mouth"); tri("mouthLowerL","mouthLeft","mouthCenter","mouth");
+  edge("mouthLeft","mouthRight","mouth"); edge("mouthUpper","mouthLower","mouth"); edge("mouthLeft","mouthUpper","mouth"); edge("mouthRight","mouthUpper","mouth"); edge("mouthRight","mouthLower","mouth"); edge("mouthLeft","mouthLower","mouth");
+
   [["bangsRootL","bangsTipL","headTop"],["bangsRootR","bangsTipR","headTop"],["sideHairRootL","sideHairTipL","templeL"],["sideHairRootR","sideHairTipR","templeR"],["backHairRoot","backHairTip","headTop"]].forEach(([root,tip,base])=>{tri(root,tip,base,"hair");edge(root,tip,"hair");});
   projectState.mesh={vertices,triangles,edges};
   if(showStatus)setStatus("cutStatus",`メッシュ生成OK: 頂点${vertices.length} / 三角${triangles.length}`);
@@ -644,25 +734,42 @@ function warpedVertex(v,r){
   const scale=r.w/(projectState.original?.width||900);
   const faceCenter=p.face||{x:.5,y:.38};
   const yaw=runtime.smooth.yaw;
-  const strength=rig.meshStrength||.5;
-  const dx=(nx-faceCenter.x)*Math.abs(yaw)*20*scale*strength;
-  x += runtime.smooth.headX*scale*strength*(ny<.62?1:.25) + (yaw>=0?dx:-dx);
-  y += runtime.smooth.headY*scale*(ny<.62?.5:.15);
+  const soft=rig.faceWarpSoftness??.65;
+  const strength=(rig.meshStrength||.38)*(1-soft*.55);
+
+  // 顔全体は「歪ませる」より「まとまりで動く」寄りに抑える。
+  const headInfluence=ny<.62?1:clamp(1-(ny-.62)*3,0,.35);
+  x += runtime.smooth.headX*scale*strength*headInfluence;
+  y += runtime.smooth.headY*scale*.35*headInfluence;
+  x += (nx-faceCenter.x)*yaw*10*scale*strength*headInfluence;
+
+  // 髪先だけ遅れて揺れる。rootはほぼ固定。
   if((v.key||"").includes("Tip")||v.key==="backHairTip"){
     x += runtime.smooth.hairX*scale*(rig.hairMeshStrength||.65);
     y += Math.sin(runtime.t*.08+v.id)*2.2*scale;
   }
-  if((v.key||"").startsWith("mouth") && v.key!=="mouthCenter"){
+
+  // 口は中心を親にして、上下左右が連動して開く。
+  if((v.key||"").startsWith("mouth")){
     const m=runtime.smooth.mouth*(rig.mouthMeshStrength||.85);
-    if(v.key==="mouthLower")y += 18*scale*m;
-    if(v.key==="mouthUpper")y -= 4*scale*m;
-    if(v.key==="mouthLeft")x -= 4*scale*m;
-    if(v.key==="mouthRight")x += 4*scale*m;
+    if(v.key.includes("Lower"))y += 20*scale*m;
+    if(v.key.includes("Upper"))y -= 3*scale*m;
+    if(v.key==="mouthLeft"||v.key==="mouthLowerL"||v.key==="mouthUpperL")x -= 4*scale*m;
+    if(v.key==="mouthRight"||v.key==="mouthLowerR"||v.key==="mouthUpperR")x += 4*scale*m;
   }
+
+  // 目は中心へ畳む。上下まぶただけでなく目頭・目尻も少し追従。
   if((v.key||"").startsWith("eye")){
-    const b=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.45,0,.95)*(rig.blinkMeshStrength||.75);
-    if(v.key.includes("Upper"))y += 11*scale*b;
-    if(v.key.includes("Lower"))y -= 7*scale*b;
+    const side=v.key.startsWith("eyeL")?"L":v.key.startsWith("eyeR")?"R":null;
+    const center=side?(p[`eye${side}Center`]||p[side==="L"?"leftEye":"rightEye"]):null;
+    const b=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.22,0,.95)*(rig.blinkMeshStrength||.85)*(rig.blinkShapeStrength??1);
+    if(center){
+      const cx=r.x+center.x*r.w, cy=r.y+center.y*r.h;
+      if(v.key.includes("Upper")) y=lerp(y,cy,b*.86);
+      if(v.key.includes("Lower")) y=lerp(y,cy,b*.78);
+      if(v.key.includes("Corner")) y=lerp(y,cy,b*.22);
+      if(v.key.includes("upper")||v.key.includes("lower")) y=lerp(y,cy,b*.55);
+    }
   }
   return{x,y};
 }
@@ -713,10 +820,10 @@ function drawMeshAvatar(g,r){
   const mesh=projectState.mesh;
   if(mesh&&mesh.triangles&&mesh.triangles.length){
     g.save();
-    g.globalAlpha=.34;
+    g.globalAlpha=.18;
     mesh.triangles.forEach(t=>{
       const group=t[3];
-      if(group==="body"||group==="neck")return;
+      if(group==="body"||group==="neck"||group==="face"||group==="faceGrid")return;
       // 変形していない時は重ね描きしない。残像を減らす。
       if(Math.abs(yaw)<.015 && mouth<.03 && blink<.03 && group!=="hair")return;
       const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
