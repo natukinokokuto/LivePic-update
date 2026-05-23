@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.8 Cut Zoom Pins</title>
+  <title>LivePic v4.1 Mesh Engine</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -19,7 +19,7 @@
     <button id="saveProjectBtn">保存</button>
     <button id="loadProjectBtn">復元</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.8 Cut Zoom Pins</span>
+    <span class="pill">v4.1 Mesh Engine</span>
   </div>
 </header>
 
@@ -43,13 +43,16 @@
     </div>
     <div class="row">
       <button id="autoPartsBtn" class="primary">自動パーツ生成</button>
+      <button id="generateMeshBtn" class="primary">メッシュ生成</button>
       <button id="applyToLiveBtn">Liveへ即反映</button>
     </div>
     <div class="row">
       <button id="hideHelpersBtn">補助表示OFF</button>
       <button id="showHelpersBtn">補助表示ON</button>
+      <button id="toggleMeshBtn">メッシュ表示ON/OFF</button>
+      <button id="toggleMeshWarpBtn">メッシュ変形ON/OFF</button>
     </div>
-    <div id="cutStatus" class="hint">Cutで作ったパーツは projectState.parts に入り、Liveへ即反映されます。</div>
+    <div id="cutStatus" class="hint">v4.1: ピン→半自動メッシュ→簡易ワープ。切り抜きだけでなく一枚絵メッシュ変形も試せます。</div>
 
     <h2>ズーム/移動</h2>
     <div class="zoom-panel">
@@ -118,7 +121,7 @@
       <button class="tool" data-point="backHairRoot">後ろ髪根元</button>
       <button class="tool" data-point="backHairTip">後ろ髪先</button>
     </div>
-    <p class="hint">クリックでピン打ち。ホイールで最大3200%ズーム。Space＋ドラッグで移動、通常ドラッグでも移動できます。</p>
+    <p class="hint">クリックでピン打ち。既存ピンはドラッグで移動。矢印キーで微調整、Shift＋矢印で大きめ移動。ホイールで最大3200%ズーム。</p>
   </section>
 
   <section class="stage-card">
@@ -155,6 +158,16 @@
     <input id="inpaintStrength" type="range" min="0" max="1" step="0.05" value="0.85">
     <label>マスク表示 <input id="showMasks" type="checkbox" checked></label>
     <label>ピン表示 <input id="showPins" type="checkbox" checked></label>
+    <label>メッシュ表示 <input id="showMesh" type="checkbox" checked></label>
+    <label>メッシュ変形 <input id="meshWarp" type="checkbox" checked></label>
+    <label>全体メッシュ強度 <span id="meshStrengthVal"></span></label>
+    <input id="meshStrength" type="range" min="0" max="1.5" step="0.05" value="0.55">
+    <label>髪メッシュ強度 <span id="hairMeshStrengthVal"></span></label>
+    <input id="hairMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.65">
+    <label>口メッシュ強度 <span id="mouthMeshStrengthVal"></span></label>
+    <input id="mouthMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
+    <label>瞬きメッシュ強度 <span id="blinkMeshStrengthVal"></span></label>
+    <input id="blinkMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.75">
   </section>
 </main>
 

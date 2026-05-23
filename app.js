@@ -30,26 +30,27 @@ const colors={
 };
 
 const projectState={
-  version:"3.7",
+  version:"4.1",
   original:null,
   originalDataUrl:"",
   points:{},
   parts:{},
   masks:{},
   contours:{},
+  mesh:{vertices:[],triangles:[],edges:[]},
   inpainted:null,
   rig:{
     headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,
     mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,
     eyeLayerClose:1.75,eyeLayerAlpha:.95,blinkHold:1.4,eyeSmile:.10,
     lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:.95,eyeSearchScale:.90,
-    inpaintStrength:.85,showMasks:true,showPins:true
+    inpaintStrength:.85,showMasks:true,showPins:true,showMesh:true,meshWarp:true,meshStrength:.55,hairMeshStrength:.65,mouthMeshStrength:.85,blinkMeshStrength:.75
   }
 };
 
 const runtime={
   tab:"cut", viewMode:"original", tool:"headTop", activeCanvas:"cut",
-  view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,moved:false,spaceDown:false},
+  view:{zoom:1,panX:0,panY:0,dragging:false,dragPin:null,lastX:0,lastY:0,moved:false,spaceDown:false},
   t:0,lastFrame:performance.now(),fps:0,
   smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
   manual:{talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0},
@@ -78,8 +79,11 @@ function wire(){
 
   on("autoPointsBtn", autoPoints);
   on("traceBtn", ()=>{traceContours();syncToLive("輪郭トレースOK");});
-  on("autoPartsBtn", ()=>{generateParts();syncToLive("自動パーツ生成OK");});
-  on("applyToLiveBtn", ()=>syncToLive("Liveへ反映しました"));
+  on("autoPartsBtn", ()=>{generateParts();generateMesh();syncToLive("自動パーツ生成OK");});
+  on("generateMeshBtn", ()=>{generateMesh();syncToLive("メッシュ生成OK");});
+  on("toggleMeshBtn", ()=>{projectState.rig.showMesh=!projectState.rig.showMesh;updateControls();syncToLive(projectState.rig.showMesh?"メッシュ表示ON":"メッシュ表示OFF");});
+  on("toggleMeshWarpBtn", ()=>{projectState.rig.meshWarp=!projectState.rig.meshWarp;updateControls();syncToLive(projectState.rig.meshWarp?"メッシュ変形ON":"メッシュ変形OFF");});
+  on("applyToLiveBtn", ()=>{generateMesh();syncToLive("Liveへ反映しました");});
   on("hideHelpersBtn", ()=>{runtime.showHelpers=false;projectState.rig.showMasks=false;projectState.rig.showPins=false;updateControls();});
   on("showHelpersBtn", ()=>{runtime.showHelpers=true;projectState.rig.showMasks=true;projectState.rig.showPins=true;updateControls();});
 
@@ -110,7 +114,7 @@ function wire(){
   on("downloadPartsBtn", downloadParts);
   on("downloadProjectBtn", downloadProjectJson);
 
-  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins"].forEach(id=>{
+  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins","showMesh","meshWarp","meshStrength","hairMeshStrength","mouthMeshStrength","blinkMeshStrength"].forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
     el.addEventListener(el.type==="checkbox"?"change":"input",()=>{
@@ -168,6 +172,7 @@ function loadImage(src,name){
     projectState.originalDataUrl=src;
     autoPoints();
     generateParts();
+    generateMesh();
     document.getElementById("dropMessage").style.display="none";
     setStatus("cutStatus",`画像読み込みOK: ${name}`);
   };
@@ -186,6 +191,7 @@ function autoPoints(){
     backHairRoot:{x:.50,y:.175}, backHairTip:{x:.50,y:.660}
   };
   syncLegacyPoints();
+  generateMesh();
   setStatus("cutStatus","詳細ピンプリセットOK");
 }
 
@@ -202,6 +208,16 @@ function setupCanvasInteraction(c){
     runtime.view.lastX=e.clientX;
     runtime.view.lastY=e.clientY;
     runtime.view.moved=false;
+    runtime.view.dragPin=null;
+    if(projectState.original && !runtime.view.spaceDown){
+      const hit=findNearestPoint(e);
+      if(hit){
+        runtime.view.dragPin=hit.key;
+        runtime.tool=hit.key;
+        document.querySelectorAll(".tool").forEach(b=>b.classList.toggle("active",b.dataset.point===hit.key));
+        const tr=document.getElementById("toolReadout"); if(tr)tr.textContent="選択中: "+(labels[hit.key]||hit.key);
+      }
+    }
   });
 }
 
@@ -209,10 +225,14 @@ window.addEventListener("mousemove",e=>{
   if(!runtime.view.dragging)return;
   const dx=e.clientX-runtime.view.lastX,dy=e.clientY-runtime.view.lastY;
   if(Math.abs(dx)+Math.abs(dy)>3)runtime.view.moved=true;
-  runtime.view.panX+=dx;runtime.view.panY+=dy;
+  if(runtime.view.dragPin){
+    updatePointFromEvent(runtime.view.dragPin,e);
+  }else{
+    runtime.view.panX+=dx;runtime.view.panY+=dy;
+  }
   runtime.view.lastX=e.clientX;runtime.view.lastY=e.clientY;
 });
-window.addEventListener("mouseup",()=>runtime.view.dragging=false);
+window.addEventListener("mouseup",()=>{runtime.view.dragging=false;runtime.view.dragPin=null;});
 canvases.cut.addEventListener("click",e=>{
   if(runtime.view.moved){runtime.view.moved=false;return;}
   placePoint(e);
@@ -243,8 +263,50 @@ function placePoint(e){
   const r=imageRect(canvases.cut.width,canvases.cut.height,true);
   projectState.points[runtime.tool]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
   syncLegacyPoints();
+  generateMesh();
   setStatus("cutStatus",`${labels[runtime.tool]||runtime.tool}を移動`);
 }
+
+
+function updatePointFromEvent(key,e){
+  if(!projectState.original||!projectState.points[key])return;
+  const rect=canvases.cut.getBoundingClientRect();
+  const r=imageRect(canvases.cut.width,canvases.cut.height,true);
+  projectState.points[key]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
+  syncLegacyPoints();
+  generateMesh(false);
+}
+
+function findNearestPoint(e){
+  if(!projectState.original)return null;
+  const rect=canvases.cut.getBoundingClientRect();
+  const r=imageRect(canvases.cut.width,canvases.cut.height,true);
+  let best=null;
+  Object.entries(projectState.points||{}).forEach(([k,p])=>{
+    if(["face","leftEye","rightEye","mouth","hair"].includes(k))return;
+    const x=rect.left+r.x+p.x*r.w,y=rect.top+r.y+p.y*r.h;
+    const d=Math.hypot(e.clientX-x,e.clientY-y);
+    const limit=Math.max(12,18*Math.min(1.8,runtime.view.zoom));
+    if(d<=limit && (!best||d<best.d))best={key:k,d};
+  });
+  return best;
+}
+
+window.addEventListener("keydown",e=>{
+  if(!projectState.original)return;
+  const key=runtime.tool;
+  if(!projectState.points[key])return;
+  const step=(e.shiftKey?.01:.003)/(runtime.view.zoom||1);
+  let dx=0,dy=0;
+  if(e.key==="ArrowLeft")dx=-step;
+  else if(e.key==="ArrowRight")dx=step;
+  else if(e.key==="ArrowUp")dy=-step;
+  else if(e.key==="ArrowDown")dy=step;
+  else return;
+  projectState.points[key].x=clamp(projectState.points[key].x+dx,0,1);
+  projectState.points[key].y=clamp(projectState.points[key].y+dy,0,1);
+  syncLegacyPoints();generateMesh(false);e.preventDefault();
+});
 
 function imageRect(w,h,editor=false){
   const img=projectState.original;
@@ -417,6 +479,7 @@ function generateParts(){
     mouth:cutLayer(src,masks.mouth),
     neck:cutLayer(src,masks.neck)
   };
+  generateMesh(false);
   renderPartsPreview();
 }
 
@@ -472,18 +535,22 @@ function drawAvatar(g,w,h,editor=false,mode="live"){
   else if(mode==="inpaint"){g.drawImage(projectState.inpainted,r.x,r.y,r.w,r.h);}
   else if(mode==="parts"){drawPartsGrid(g,w,h);}
   else{
-    const p=projectState.points, rig=projectState.rig, yaw=runtime.smooth.yaw, scale=r.w/projectState.original.width;
-    const headMove=runtime.smooth.headX*scale*rig.headBone, headY=runtime.smooth.headY*scale*.45;
-    const rot=yaw*rig.headRotate*Math.PI/180;
-    g.drawImage(parts.base_inpainted||projectState.original,r.x,r.y,r.w,r.h);
-    drawPart(g,parts.neck,p.neck,r, runtime.smooth.neckX*scale*rig.neckBone,0,rot*.1,1,1,.85);
-    drawPart(g,parts.face,p.face,r, headMove,headY,rot,1-Math.abs(yaw)*.01,1,1);
-    drawPart(g,parts.front_hair,p.hair,r, runtime.smooth.hairX*scale*rig.hairBone,headY*.2,rot*.25,1,1,.80);
-    const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.94);
-    drawEye(g,parts.left_eye,p.leftEye,r,headMove,headY,rot,blink);
-    drawEye(g,parts.right_eye,p.rightEye,r,headMove,headY,rot,blink);
-    drawMouth(g,parts.mouth,p.mouth,r,headMove,headY,rot,runtime.smooth.mouth);
-    drawSynthetic(g,r,p,headMove,headY,rot);
+    if(projectState.rig.meshWarp && projectState.mesh && projectState.mesh.triangles.length){
+      drawMeshAvatar(g,r);
+    }else{
+      const p=projectState.points, rig=projectState.rig, yaw=runtime.smooth.yaw, scale=r.w/projectState.original.width;
+      const headMove=runtime.smooth.headX*scale*rig.headBone, headY=runtime.smooth.headY*scale*.45;
+      const rot=yaw*rig.headRotate*Math.PI/180;
+      g.drawImage(parts.base_inpainted||projectState.original,r.x,r.y,r.w,r.h);
+      drawPart(g,parts.neck,p.neck,r, runtime.smooth.neckX*scale*rig.neckBone,0,rot*.1,1,1,.85);
+      drawPart(g,parts.face,p.face,r, headMove,headY,rot,1-Math.abs(yaw)*.01,1,1);
+      drawPart(g,parts.front_hair,p.hair,r, runtime.smooth.hairX*scale*rig.hairBone,headY*.2,rot*.25,1,1,.80);
+      const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.94);
+      drawEye(g,parts.left_eye,p.leftEye,r,headMove,headY,rot,blink);
+      drawEye(g,parts.right_eye,p.rightEye,r,headMove,headY,rot,blink);
+      drawMouth(g,parts.mouth,p.mouth,r,headMove,headY,rot,runtime.smooth.mouth);
+      drawSynthetic(g,r,p,headMove,headY,rot);
+    }
   }
   if(editor&&runtime.showHelpers)drawHelpers(g,r);
 }
@@ -527,9 +594,126 @@ function drawSynthetic(g,r,p,tx,ty,rot){
   }
 }
 
+
+function generateMesh(showStatus=true){
+  const p=projectState.points||{};
+  const vertices=[];
+  const add=(key,sourceKey=key)=>{ if(!p[sourceKey])return null; const id=vertices.length; vertices.push({id,key,x:p[sourceKey].x,y:p[sourceKey].y,source:sourceKey}); return id; };
+  const byKey={};
+  ["headTop","chin","templeL","templeR","neck","body","eyeLCenter","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeRCenter","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","mouthCenter","mouthLeft","mouthRight","mouthUpper","mouthLower","bangsRootL","bangsTipL","bangsRootR","bangsTipR","sideHairRootL","sideHairTipL","sideHairRootR","sideHairTipR","backHairRoot","backHairTip"].forEach(k=>{const id=add(k); if(id!=null)byKey[k]=id;});
+  const makeMid=(key,a,b,t=.5)=>{ if(!p[a]||!p[b])return null; const id=vertices.length; vertices.push({id,key,x:lerp(p[a].x,p[b].x,t),y:lerp(p[a].y,p[b].y,t),source:key,auto:true}); byKey[key]=id; return id; };
+  makeMid("faceCenter","headTop","chin",.55);
+  makeMid("browLine","templeL","templeR",.5);
+  makeMid("upperFace","headTop","chin",.35);
+  makeMid("lowerFace","headTop","chin",.72);
+  const triangles=[]; const edges=[];
+  const tri=(a,b,c,group="face")=>{ if(byKey[a]!=null&&byKey[b]!=null&&byKey[c]!=null)triangles.push([byKey[a],byKey[b],byKey[c],group]); };
+  const edge=(a,b,group="line")=>{ if(byKey[a]!=null&&byKey[b]!=null)edges.push([byKey[a],byKey[b],group]); };
+  // 顔の大きな面
+  tri("headTop","templeL","faceCenter","face"); tri("headTop","faceCenter","templeR","face");
+  tri("templeL","chin","faceCenter","face"); tri("templeR","faceCenter","chin","face");
+  tri("chin","neck","faceCenter","neck"); tri("neck","body","faceCenter","body");
+  edge("headTop","chin","axis"); edge("templeL","templeR","face"); edge("chin","neck","neck"); edge("neck","body","body");
+  // 目・口の局所面
+  [["L","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeLCenter"],["R","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","eyeRCenter"]].forEach(([side,inn,out,up,low,cen])=>{
+    tri(inn,up,cen,"eye"); tri(up,out,cen,"eye"); tri(out,low,cen,"eye"); tri(low,inn,cen,"eye");
+    edge(inn,out,"eye"); edge(up,low,"eye");
+  });
+  tri("mouthLeft","mouthUpper","mouthCenter","mouth"); tri("mouthUpper","mouthRight","mouthCenter","mouth"); tri("mouthRight","mouthLower","mouthCenter","mouth"); tri("mouthLower","mouthLeft","mouthCenter","mouth");
+  edge("mouthLeft","mouthRight","mouth"); edge("mouthUpper","mouthLower","mouth");
+  // 髪束はroot/tipの三角面で揺れを持たせる
+  [["bangsRootL","bangsTipL","headTop"],["bangsRootR","bangsTipR","headTop"],["sideHairRootL","sideHairTipL","templeL"],["sideHairRootR","sideHairTipR","templeR"],["backHairRoot","backHairTip","headTop"]].forEach(([root,tip,base])=>{tri(root,tip,base,"hair");edge(root,tip,"hair");});
+  projectState.mesh={vertices,triangles,edges};
+  if(showStatus)setStatus("cutStatus",`メッシュ生成OK: 頂点${vertices.length} / 三角${triangles.length}`);
+  updateProjectReadout();
+}
+
+function warpedVertex(v,r){
+  const rig=projectState.rig, p=projectState.points;
+  const nx=v.x, ny=v.y;
+  let x=r.x+nx*r.w, y=r.y+ny*r.h;
+  const scale=r.w/(projectState.original?.width||900);
+  const faceCenter=p.face||{x:.5,y:.38};
+  const yaw=runtime.smooth.yaw;
+  const strength=rig.meshStrength||.5;
+  const dx=(nx-faceCenter.x)*Math.abs(yaw)*20*scale*strength;
+  x += runtime.smooth.headX*scale*strength*(ny<.62?1:.25) + (yaw>=0?dx:-dx);
+  y += runtime.smooth.headY*scale*(ny<.62?.5:.15);
+  if((v.key||"").includes("Tip")||v.key==="backHairTip"){
+    x += runtime.smooth.hairX*scale*(rig.hairMeshStrength||.65);
+    y += Math.sin(runtime.t*.08+v.id)*2.2*scale;
+  }
+  if((v.key||"").startsWith("mouth") && v.key!=="mouthCenter"){
+    const m=runtime.smooth.mouth*(rig.mouthMeshStrength||.85);
+    if(v.key==="mouthLower")y += 18*scale*m;
+    if(v.key==="mouthUpper")y -= 4*scale*m;
+    if(v.key==="mouthLeft")x -= 4*scale*m;
+    if(v.key==="mouthRight")x += 4*scale*m;
+  }
+  if((v.key||"").startsWith("eye")){
+    const b=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.45,0,.95)*(rig.blinkMeshStrength||.75);
+    if(v.key.includes("Upper"))y += 11*scale*b;
+    if(v.key.includes("Lower"))y -= 7*scale*b;
+  }
+  return{x,y};
+}
+
+function drawMeshAvatar(g,r){
+  const img=projectState.original;
+  g.drawImage(img,r.x,r.y,r.w,r.h);
+  const mesh=projectState.mesh;
+  if(!mesh||!mesh.triangles.length)return;
+  g.save();
+  g.globalAlpha=.72;
+  mesh.triangles.forEach(t=>{
+    const group=t[3];
+    if(group==="body")return;
+    const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
+    const dv=sv.map(v=>warpedVertex(v,r));
+    drawTexturedTriangle(g,img,r,sv,dv);
+  });
+  g.restore();
+  const p=projectState.points, rig=projectState.rig, scale=r.w/projectState.original.width;
+  const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.94);
+  drawSynthetic(g,r,p,runtime.smooth.headX*scale*rig.headBone,runtime.smooth.headY*scale*.45,runtime.smooth.yaw*rig.headRotate*Math.PI/180);
+}
+
+function drawTexturedTriangle(g,img,r,src,dst){
+  const sw=img.width,sh=img.height;
+  const s=src.map(v=>({x:v.x*sw,y:v.y*sh}));
+  const d=dst;
+  const denom=s[0].x*(s[1].y-s[2].y)+s[1].x*(s[2].y-s[0].y)+s[2].x*(s[0].y-s[1].y);
+  if(Math.abs(denom)<.001)return;
+  const a=(d[0].x*(s[1].y-s[2].y)+d[1].x*(s[2].y-s[0].y)+d[2].x*(s[0].y-s[1].y))/denom;
+  const b=(d[0].x*(s[2].x-s[1].x)+d[1].x*(s[0].x-s[2].x)+d[2].x*(s[1].x-s[0].x))/denom;
+  const c=(d[0].x*(s[1].x*s[2].y-s[2].x*s[1].y)+d[1].x*(s[2].x*s[0].y-s[0].x*s[2].y)+d[2].x*(s[0].x*s[1].y-s[1].x*s[0].y))/denom;
+  const dA=(d[0].y*(s[1].y-s[2].y)+d[1].y*(s[2].y-s[0].y)+d[2].y*(s[0].y-s[1].y))/denom;
+  const e=(d[0].y*(s[2].x-s[1].x)+d[1].y*(s[0].x-s[2].x)+d[2].y*(s[1].x-s[0].x))/denom;
+  const f=(d[0].y*(s[1].x*s[2].y-s[2].x*s[1].y)+d[1].y*(s[2].x*s[0].y-s[0].x*s[2].y)+d[2].y*(s[0].x*s[1].y-s[1].x*s[0].y))/denom;
+  g.save();
+  g.beginPath();g.moveTo(d[0].x,d[0].y);g.lineTo(d[1].x,d[1].y);g.lineTo(d[2].x,d[2].y);g.closePath();g.clip();
+  g.transform(a,dA,b,e,c,f);
+  g.drawImage(img,0,0);
+  g.restore();
+}
+
+function drawMeshOverlay(g,r){
+  const mesh=projectState.mesh;if(!mesh||!mesh.vertices.length)return;
+  const pos=v=>warpedVertex(v,r);
+  g.save();
+  mesh.triangles.forEach(t=>{
+    const a=pos(mesh.vertices[t[0]]),b=pos(mesh.vertices[t[1]]),c=pos(mesh.vertices[t[2]]);
+    g.strokeStyle=t[3]==="hair"?"rgba(199,125,255,.50)":t[3]==="mouth"?"rgba(255,159,67,.55)":t[3]==="eye"?"rgba(126,231,255,.55)":"rgba(255,230,109,.42)";
+    g.lineWidth=1.5;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(c.x,c.y);g.closePath();g.stroke();
+  });
+  mesh.edges.forEach(e=>{const a=pos(mesh.vertices[e[0]]),b=pos(mesh.vertices[e[1]]);g.strokeStyle=e[2]==="hair"?"rgba(199,125,255,.9)":"rgba(255,255,255,.45)";g.lineWidth=2;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();});
+  g.restore();
+}
+
 function drawPartsGrid(g,w,h){g.fillStyle="rgba(0,0,0,.25)";g.fillRect(0,0,w,h);let i=0;Object.entries(projectState.parts).forEach(([name,img])=>{const col=i%3,row=Math.floor(i/3),cw=w/3,ch=h/4,x=col*cw,y=row*ch;g.strokeStyle="rgba(255,255,255,.2)";g.strokeRect(x+8,y+8,cw-16,ch-16);g.drawImage(img,x+10,y+26,cw-20,ch-38);g.fillStyle="#fff";g.font="13px system-ui";g.fillText(name,x+14,y+22);i++;});}
 function drawHelpers(g,r){
   drawStructureLines(g,r);
+  if(projectState.rig.showMesh)drawMeshOverlay(g,r);
   if(projectState.rig.showPins)Object.entries(projectState.points).forEach(([k,p])=>{
     if(["face","leftEye","rightEye","mouth","hair"].includes(k))return;
     const x=r.x+p.x*r.w,y=r.y+p.y*r.h;
@@ -600,10 +784,10 @@ function updateControls(){
   Object.entries(projectState.rig).forEach(([k,v])=>{const el=document.getElementById(k);if(!el)return;if(el.type==="checkbox")el.checked=!!v;else el.value=v;const lab=document.getElementById(k+"Val");if(lab)lab.textContent=typeof v==="number"?v.toFixed(k.includes("Hold")||k.includes("Scale")||k.includes("Bone")||k.includes("Alpha")?2:1):v;});
   updateProjectReadout();
 }
-function updateProjectReadout(){const el=document.getElementById("statusReadout");if(el)el.textContent=`parts:${Object.keys(projectState.parts).length} contours:${Object.keys(projectState.contours).length}`;}
-function saveProject(){localStorage.setItem("livepic_v37_project",JSON.stringify({points:projectState.points,rig:projectState.rig,originalDataUrl:projectState.originalDataUrl}));setStatus("cutStatus","保存しました");}
-function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;syncLegacyPoints();Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
-function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
+function updateProjectReadout(){const el=document.getElementById("statusReadout");if(el)el.textContent=`parts:${Object.keys(projectState.parts).length} contours:${Object.keys(projectState.contours).length} mesh:${projectState.mesh?.triangles?.length||0}`;}
+function saveProject(){localStorage.setItem("livepic_v37_project",JSON.stringify({points:projectState.points,rig:projectState.rig,mesh:projectState.mesh,originalDataUrl:projectState.originalDataUrl}));setStatus("cutStatus","保存しました");}
+function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;projectState.mesh=d.mesh||projectState.mesh;syncLegacyPoints();generateMesh(false);Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
+function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,mesh:projectState.mesh,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
 function downloadParts(){Object.entries(projectState.parts).forEach(([name,canvas],i)=>setTimeout(()=>{const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download=`livepic_${name}.png`;document.body.appendChild(a);a.click();a.remove();},i*150));}
 function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();}
 function openObs(){runtime.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");resizeAll();}
