@@ -1,3 +1,11 @@
+window.addEventListener("error", (e)=>{
+  console.error("LivePic error:", e.message, e.filename, e.lineno);
+  const msg = document.getElementById("dropMessage");
+  if(msg){
+    msg.style.display = "block";
+    msg.textContent = "表示エラー: " + e.message;
+  }
+});
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const obsCanvas = document.getElementById("obsCanvas");
@@ -146,7 +154,7 @@ function draw(target,w,h,editor){
   const c=state.controls, motion=state.motion?1:0;
   if(state.autoYaw)c.yaw=Math.sin(state.t*.025)*70;
   c.yaw=clamp(c.yaw + state.manual.yawKey*3,-100,100);
-  document.getElementById("yaw").value=Math.round(c.yaw); updateAllLabels(false);
+  document.getElementById("yaw").value=Math.round(c.yaw); updateAllLabels();
   const breath=Math.sin(state.t*.035)*c.breath*motion;
   const sway=Math.sin(state.t*.022)*c.sway*motion;
   const tilt=Math.sin(state.t*.018)*c.tilt*.25*motion;
@@ -218,11 +226,22 @@ function setNextBlink(){state.nextBlink=performance.now()+3000+Math.random()*300
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
 function settings(){return{app:"LivePic",version:"0.5",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
-function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);Object.entries(state.controls).forEach(([k,v])=>{const el=document.getElementById(k);if(el.type==="checkbox")el.checked=!!v;else if(el)el.value=v;});updateAllLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
+function applySettings(d){
+  if(d.points) state.points = d.points;
+  if(d.controls) Object.assign(state.controls, d.controls);
+  Object.entries(state.controls).forEach(([k,v])=>{
+    const el = document.getElementById(k);
+    if(!el) return;
+    if(el.type === "checkbox") el.checked = !!v;
+    else el.value = v;
+  });
+  updateAllLabels();
+  if(d.imageDataUrl) loadImage(d.imageDataUrl, d.imageName || "restored", false);
+}
 function saveLocal(){try{localStorage.setItem("livepic_v05",JSON.stringify(settings()));}catch(e){}}
 function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v05");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
-function updateAllLabels(write=True){
+function updateAllLabels(){
   const ids=["breath","sway","tilt","mouthAmount","blinkAmount","micGain","yaw","meshPower","faceRadius"];
   ids.forEach(id=>{const el=document.getElementById(id+"Val");if(el){let v=state.controls[id];if(id==="micGain")v=Number(v).toFixed(1);el.textContent=v;}});
   const mesh=document.getElementById("meshEnabled"); if(mesh) mesh.checked=!!state.controls.meshEnabled;
