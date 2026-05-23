@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v2.1 Refined Mesh Engine Alpha</title>
+  <title>LivePic v2.2 Mesh Debug Power</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>三角メッシュを細かくし、頬・顎・口・瞬きをIRIAM方向に寄せた調整版。</p>
+    <p>三角メッシュ変形を強制的に見える化したデバッグ強化版。まず“ちゃんと変形する”を最優先。</p>
   </div>
   <div class="header-actions">
-    <button id="presetBtn" class="primary">IRIAM寄せプリセット</button>
+    <button id="presetBtn" class="primary">強変形プリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v2.1 Refined Mesh</span>
+    <span class="pill">v2.2 Mesh Debug Power</span>
   </div>
 </header>
 
@@ -32,7 +32,7 @@
       <button id="sampleBtn">サンプル</button>
       <button id="detectBtn" class="primary">画像顔認識</button>
     </div>
-    <div id="status" class="hint">GitHub Pages上で顔認識/カメラが安定します。</div>
+    <div id="status" class="hint">まずはサンプルで「顔向き自動」「口パク」「瞬き」が変形するか確認。</div>
 
     <h2>ポイント指定</h2>
     <div class="tool-grid">
@@ -68,7 +68,7 @@
       <button id="motionBtn">モーション ON</button>
       <button id="trackingBtn" class="primary">顔トラッキング OFF</button>
       <button id="micBtn">マイク OFF</button>
-      <button id="guideBtn">ガイド ON</button>
+      <button id="meshLineBtn">メッシュ線 ON</button>
     </div>
     <div class="stage-toolbar">
       <button id="blinkBtn">瞬きテスト</button>
@@ -108,53 +108,55 @@
     <h2>本物メッシュ</h2>
     <label>メッシュ変形 <input id="meshEnabled" type="checkbox" checked></label>
     <label>メッシュ密度 <span id="meshDensityVal"></span></label>
-    <input id="meshDensity" type="range" min="14" max="60" value="66">
+    <input id="meshDensity" type="range" min="10" max="70" value="36">
+    <label>全体変形倍率 <span id="globalPowerVal"></span></label>
+    <input id="globalPower" type="range" min="0.5" max="4.0" step="0.1" value="2.2">
     <label>変形範囲 <span id="faceRadiusVal"></span></label>
-    <input id="faceRadius" type="range" min="70" max="420" value="240">
+    <input id="faceRadius" type="range" min="70" max="480" value="270">
     <label>顔向き増幅 <span id="yawBoostVal"></span></label>
-    <input id="yawBoost" type="range" min="0.5" max="4.5" step="0.1" value="2.5">
+    <input id="yawBoost" type="range" min="0.5" max="6.0" step="0.1" value="3.2">
     <label>顔向き手動 <span id="manualYawVal"></span></label>
     <input id="manualYaw" type="range" min="-100" max="100" value="0">
 
-    <h2>IRIAM寄せ変形</h2>
+    <h2>顔・頭</h2>
     <label>頭の移動 <span id="headShiftVal"></span></label>
-    <input id="headShift" type="range" min="0" max="90" value="36">
+    <input id="headShift" type="range" min="0" max="140" value="72">
     <label>顔の圧縮 <span id="faceSquashVal"></span></label>
-    <input id="faceSquash" type="range" min="0" max="0.45" step="0.01" value="0.13">
+    <input id="faceSquash" type="range" min="0" max="0.70" step="0.01" value="0.32">
     <label>頬の立体感 <span id="cheekPowerVal"></span></label>
-    <input id="cheekPower" type="range" min="0" max="80" value="34">
+    <input id="cheekPower" type="range" min="0" max="140" value="76">
     <label>鼻筋シフト <span id="noseShiftVal"></span></label>
-    <input id="noseShift" type="range" min="0" max="70" value="24">
-    <label>顎の追従 <span id="chinFollowVal"></span></label>
-    <input id="chinFollow" type="range" min="0" max="70" value="42">
-    <label>髪の遅れ <span id="hairLagVal"></span></label>
+    <input id="noseShift" type="range" min="0" max="130" value="58">
+    <label>あご追従 <span id="chinFollowVal"></span></label>
+    <input id="chinFollow" type="range" min="0" max="120" value="74">
+    <label>髪遅れ <span id="hairLagVal"></span></label>
     <input id="hairLag" type="range" min="0" max="1" step="0.05" value="0.72">
-    <label>首の遅れ <span id="neckLagVal"></span></label>
-    <input id="neckLag" type="range" min="0" max="1" step="0.05" value="0.54">
+    <label>首遅れ <span id="neckLagVal"></span></label>
+    <input id="neckLag" type="range" min="0" max="1" step="0.05" value="0.56">
 
     <h2>口メッシュ</h2>
     <label>口感度 <span id="mouthSensitivityVal"></span></label>
-    <input id="mouthSensitivity" type="range" min="1" max="14" step="0.1" value="8.5">
+    <input id="mouthSensitivity" type="range" min="1" max="18" step="0.1" value="10.5">
     <label>口開き強さ <span id="mouthOpenPowerVal"></span></label>
-    <input id="mouthOpenPower" type="range" min="0" max="160" value="118">
+    <input id="mouthOpenPower" type="range" min="0" max="260" value="175">
     <label>口周辺範囲 <span id="mouthRadiusVal"></span></label>
-    <input id="mouthRadius" type="range" min="25" max="160" value="86">
+    <input id="mouthRadius" type="range" min="20" max="220" value="110">
     <label>あご落ち <span id="jawDropVal"></span></label>
-    <input id="jawDrop" type="range" min="0" max="120" value="48">
+    <input id="jawDrop" type="range" min="0" max="220" value="120">
 
     <h2>目メッシュ</h2>
     <label>瞬き感度 <span id="blinkSensitivityVal"></span></label>
-    <input id="blinkSensitivity" type="range" min="1" max="14" step="0.1" value="7.0">
+    <input id="blinkSensitivity" type="range" min="1" max="18" step="0.1" value="10.0">
     <label>瞬き強さ <span id="blinkPowerVal"></span></label>
-    <input id="blinkPower" type="range" min="0" max="100" value="82">
+    <input id="blinkPower" type="range" min="0" max="180" value="135">
     <label>目周辺範囲 <span id="eyeRadiusVal"></span></label>
-    <input id="eyeRadius" type="range" min="20" max="140" value="58">
+    <input id="eyeRadius" type="range" min="20" max="180" value="90">
 
-    <h2>呼吸/慣性</h2>
+    <h2>呼吸/反応</h2>
     <label>胸呼吸 <span id="breathVal"></span></label>
-    <input id="breath" type="range" min="0" max="40" value="9">
+    <input id="breath" type="range" min="0" max="40" value="6">
     <label>反応速度 <span id="trackingSpeedVal"></span></label>
-    <input id="trackingSpeed" type="range" min="0.05" max="0.55" step="0.01" value="0.24">
+    <input id="trackingSpeed" type="range" min="0.05" max="0.75" step="0.01" value="0.32">
   </section>
 </main>
 

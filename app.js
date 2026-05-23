@@ -12,17 +12,17 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
+  tool:"face",motion:true,obs:false,debug:true,showMeshLines:true,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,meshDensity:48,faceRadius:245,yawBoost:2.7,manualYaw:0,
-    headShift:36,faceSquash:0.13,cheekPower:34,noseShift:24,chinFollow:42,hairLag:0.76,neckLag:0.58,
-    mouthSensitivity:8.8,mouthOpenPower:118,mouthRadius:86,jawDrop:58,
-    blinkSensitivity:7.4,blinkPower:82,eyeRadius:66,
-    breath:7,trackingSpeed:0.26
+    meshEnabled:true,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
+    headShift:72,faceSquash:0.32,cheekPower:76,noseShift:58,chinFollow:74,hairLag:0.72,neckLag:0.56,
+    mouthSensitivity:10.5,mouthOpenPower:175,mouthRadius:110,jawDrop:120,
+    blinkSensitivity:10.0,blinkPower:135,eyeRadius:90,
+    breath:6,trackingSpeed:0.32
   },
   track:{yaw:0,mouth:0,blink:0,hasFace:false},
-  smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0,eyeX:0,eyeY:0},
+  smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
   manual:{talking:0,blinkBoost:0,yawKey:0},
   view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,dragMoved:false},
   mic:{enabled:false,stream:null,audioCtx:null,analyser:null,data:null,level:0},
@@ -68,9 +68,9 @@ function wire(){
   document.getElementById("motionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("motionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
   document.getElementById("trackingBtn").onclick=toggleTracking;
   document.getElementById("micBtn").onclick=toggleMic;
-  document.getElementById("guideBtn").onclick=()=>{state.debug=!state.debug;document.getElementById("guideBtn").textContent=state.debug?"ガイド ON":"ガイド OFF";};
+  document.getElementById("meshLineBtn").onclick=()=>{state.showMeshLines=!state.showMeshLines;document.getElementById("meshLineBtn").textContent=state.showMeshLines?"メッシュ線 ON":"メッシュ線 OFF";};
   document.getElementById("blinkBtn").onclick=()=>triggerBlink(true);
-  document.getElementById("talkBtn").onclick=()=>state.manual.talking=1.25;
+  document.getElementById("talkBtn").onclick=()=>state.manual.talking=1.4;
   document.getElementById("autoYawBtn").onclick=()=>{state.autoYaw=!state.autoYaw;document.getElementById("autoYawBtn").textContent=state.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";};
   document.getElementById("centerBtn").onclick=()=>{state.controls.manualYaw=0;state.track.yaw=0;state.smooth.yaw=0;updateLabels();};
   document.getElementById("obsBtn").onclick=()=>openObs(false);
@@ -107,7 +107,7 @@ function wire(){
     if(e.repeat)return;
     if(e.code==="KeyA")state.manual.yawKey=-1;
     if(e.code==="KeyD")state.manual.yawKey=1;
-    if(e.code==="Space"){e.preventDefault();state.manual.talking=1.25;}
+    if(e.code==="Space"){e.preventDefault();state.manual.talking=1.4;}
     if(e.code==="KeyB")triggerBlink(true);
   });
   window.addEventListener("keyup",e=>{if(["KeyA","KeyD"].includes(e.code))state.manual.yawKey=0;});
@@ -115,14 +115,14 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,meshDensity:48,faceRadius:245,yawBoost:2.7,manualYaw:0,
-    headShift:36,faceSquash:0.13,cheekPower:34,noseShift:24,chinFollow:42,hairLag:0.76,neckLag:0.58,
-    mouthSensitivity:8.8,mouthOpenPower:118,mouthRadius:86,jawDrop:58,
-    blinkSensitivity:7.4,blinkPower:82,eyeRadius:66,
-    breath:7,trackingSpeed:0.26
+    meshEnabled:true,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
+    headShift:72,faceSquash:0.32,cheekPower:76,noseShift:58,chinFollow:74,hairLag:0.72,neckLag:0.56,
+    mouthSensitivity:10.5,mouthOpenPower:175,mouthRadius:110,jawDrop:120,
+    blinkSensitivity:10.0,blinkPower:135,eyeRadius:90,
+    breath:6,trackingSpeed:0.32
   });
   updateLabels();
-  alert("IRIAM寄せプリセットを適用しました");
+  alert("強変形プリセットを適用しました");
 }
 
 function selectTool(b){
@@ -198,16 +198,32 @@ function onCameraResults(res){
   state.track.hasFace=true;document.getElementById("trackReadout").textContent="Tracking: ON / 顔あり";
 }
 
-function fitCanvas(){const r=document.getElementById("stage").getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=Math.max(1,Math.floor(r.width*d));canvas.height=Math.max(1,Math.floor(r.height*d));canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";ctx.setTransform(d,0,0,d,0,0);}
-function fitObs(){const d=devicePixelRatio||1;obsCanvas.width=Math.floor(innerWidth*d);obsCanvas.height=Math.floor(innerHeight*d);obsCtx.setTransform(d,0,0,d,0,0);}
+function fitCanvas(){
+  const r=document.getElementById("stage").getBoundingClientRect();
+  // Important: use CSS-pixel canvas coordinates so triangle affine transforms do not fight DPR transforms.
+  canvas.width=Math.max(1,Math.floor(r.width));
+  canvas.height=Math.max(1,Math.floor(r.height));
+  canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.imageSmoothingEnabled=true;
+}
+function fitObs(){
+  obsCanvas.width=Math.floor(innerWidth);
+  obsCanvas.height=Math.floor(innerHeight);
+  obsCtx.setTransform(1,0,0,1,0,0);
+  obsCtx.imageSmoothingEnabled=true;
+}
 function baseRect(w,h){if(!state.image)return{x:0,y:0,w:0,h:0};const s=Math.min(w/state.image.width,h/state.image.height)*.92;return{x:(w-state.image.width*s)/2,y:(h-state.image.height*s)/2,w:state.image.width*s,h:state.image.height*s};}
 function imageRect(w,h,editor){const r=baseRect(w,h);if(!editor)return r;const cx=w/2,cy=h/2;return{x:cx+(r.x-cx)*state.view.zoom+state.view.panX,y:cy+(r.y-cy)*state.view.zoom+state.view.panY,w:r.w*state.view.zoom,h:r.h*state.view.zoom};}
 function updateZoomUi(){document.getElementById("zoomVal").textContent=Math.round(state.view.zoom*100)+"%";document.getElementById("zoomRange").value=Math.round(state.view.zoom*100);}
 function placePoint(e){if(!state.image)return;const d=canvas.getBoundingClientRect(),r=imageRect(d.width,d.height,true);state.points[state.tool]={x:clamp((e.clientX-d.left-r.x)/r.w,0,1),y:clamp((e.clientY-d.top-r.y)/r.h,0,1)};}
 
 function draw(g,w,h,editor){
+  g.setTransform(1,0,0,1,0,0);
   g.clearRect(0,0,w,h);
   if(!state.image)return;
+  g.imageSmoothingEnabled=true;
+  g.imageSmoothingQuality="high";
   const r=imageRect(w,h,editor);
   if(!state.controls.meshEnabled){
     g.drawImage(state.image,r.x,r.y,r.w,r.h);
@@ -220,7 +236,8 @@ function draw(g,w,h,editor){
 
 function drawWarpedMesh(g,r){
   const n=Math.floor(state.controls.meshDensity);
-  const cols=n,rows=Math.max(18, Math.floor(n*state.image.height/state.image.width));
+  const cols=n;
+  const rows=Math.max(16,Math.floor(n*state.image.height/state.image.width));
   const verts=[];
   for(let y=0;y<=rows;y++){
     for(let x=0;x<=cols;x++){
@@ -228,8 +245,12 @@ function drawWarpedMesh(g,r){
       verts.push({u,v,...warpPoint(u,v,r)});
     }
   }
-  // draw base behind slightly enlarged to hide any triangle seam/edge
-  g.save();g.globalAlpha=.18;g.drawImage(state.image,r.x-2,r.y-2,r.w+4,r.h+4);g.restore();
+
+  // Background underlay hides tiny cracks and makes it obvious something is there.
+  g.save();
+  g.globalAlpha=0.20;
+  g.drawImage(state.image,r.x-3,r.y-3,r.w+6,r.h+6);
+  g.restore();
 
   for(let y=0;y<rows;y++){
     for(let x=0;x<cols;x++){
@@ -237,127 +258,107 @@ function drawWarpedMesh(g,r){
       const a=verts[i],b=verts[i+1],c=verts[i+cols+1],d=verts[i+cols+2];
       drawTri(g,a,b,c);
       drawTri(g,b,d,c);
+      if(state.showMeshLines){
+        g.save();
+        g.globalAlpha=.16;
+        g.strokeStyle="rgba(126,231,255,.75)";
+        g.lineWidth=.45;
+        g.beginPath();
+        g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(d.x,d.y);g.lineTo(c.x,c.y);g.closePath();
+        g.stroke();
+        g.restore();
+      }
     }
   }
 }
 
 function warpPoint(u,v,r){
   const p=normPoints();
-  const c=state.controls, scale=r.w/900;
+  const c=state.controls, gp=c.globalPower||1, scale=r.w/900;
   let x=r.x+u*r.w,y=r.y+v*r.h;
+
   const face=toPixel(p.face,r),mouth=toPixel(p.mouth,r),chin=toPixel(p.chin,r),neck=toPixel(p.neck,r),hair=toPixel(p.hair,r);
   const leftEye=toPixel(p.leftEye,r),rightEye=toPixel(p.rightEye,r);
   const yaw=state.smooth.yaw;
   const mouthOpen=state.smooth.mouth;
   const blink=state.smooth.blink;
 
-  // Stable chest breathing only below neck. No "flying".
-  const bodyInf=smoothStep(p.neck.y, 1.0, v);
-  y += Math.sin(state.t*.035)*c.breath*scale*0.13*bodyInf;
-  x += Math.sin(state.t*.020)*0.9*scale*bodyInf;
+  // Chest breathing only below neck.
+  const bodyInf=smoothStep(p.neck.y,1.0,v);
+  y += Math.sin(state.t*.035)*c.breath*scale*0.16*bodyInf;
 
-  // Head influence: oval weighting, not circle only.
+  // Elliptical head influence.
   const ox=(x-face.x)/(c.faceRadius*scale*0.92+.001);
   const oy=(y-face.y)/(c.faceRadius*scale*1.24+.001);
   let headInf=clamp(1-Math.sqrt(ox*ox+oy*oy),0,1);
-  headInf=headInf*headInf*(3-2*headInf);
+  headInf=sCurve(headInf);
 
-  // Hair and neck are separate delayed-ish regions
-  const hx=(x-hair.x)/(c.faceRadius*scale*.95+.001), hy=(y-hair.y)/(c.faceRadius*scale*.76+.001);
-  let hairInf=clamp(1-Math.sqrt(hx*hx+hy*hy),0,1); hairInf=hairInf*hairInf;
+  // Hair/neck separate delayed influence
+  const hx=(x-hair.x)/(c.faceRadius*scale*.96+.001), hy=(y-hair.y)/(c.faceRadius*scale*.78+.001);
+  let hairInf=sCurve(clamp(1-Math.sqrt(hx*hx+hy*hy),0,1));
+  const nx=(x-neck.x)/(c.faceRadius*scale*.46+.001), ny=(y-neck.y)/(c.faceRadius*scale*.38+.001);
+  let neckInf=sCurve(clamp(1-Math.sqrt(nx*nx+ny*ny),0,1));
 
-  const nx=(x-neck.x)/(c.faceRadius*scale*.42+.001), ny=(y-neck.y)/(c.faceRadius*scale*.36+.001);
-  let neckInf=clamp(1-Math.sqrt(nx*nx+ny*ny),0,1); neckInf=neckInf*neckInf;
-
-  // IRIAM-like head shift: face moves, neck less, hair counters with lag.
   x += state.smooth.headX*scale*headInf;
   y += state.smooth.headY*scale*headInf;
   x += state.smooth.neckX*scale*neckInf;
   x += state.smooth.hairX*scale*hairInf;
 
-  // Pseudo 3D face turn: center shifts, far side compresses, near cheek expands.
+  // Face turn deformation
   const side=(x-face.x)/(c.faceRadius*scale+.001);
   const verticalFace=clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*1.25+.001)),0,1);
   const cheekInf=headInf*verticalFace;
-  x += yaw*c.headShift*scale*cheekInf*(1-Math.abs(side)*.18);
-  x += -yaw*c.faceSquash*44*scale*cheekInf*side;
+  x += yaw*c.headShift*scale*cheekInf*gp*(1-Math.abs(side)*.18);
+  x += -yaw*c.faceSquash*44*scale*cheekInf*side*gp;
+  x += yaw*c.cheekPower*scale*cheekInf*0.22*Math.sign(side||1)*(1-Math.abs(side))*gp;
+  y += Math.abs(yaw)*c.cheekPower*0.040*scale*cheekInf*Math.sign(y-face.y)*gp;
 
-  // cheek volume: one cheek forward, other back. Subtle but makes it less rubber-sheet.
-  const cheekPower=(c.cheekPower||0)*scale;
-  const cheekSign = side >= 0 ? 1 : -1;
-  x += yaw*cheekPower*cheekInf*0.18*cheekSign*(1-Math.abs(side));
-  y += Math.abs(yaw)*cheekPower*0.035*cheekInf*Math.sign(y-face.y);
+  // Nose bridge / center band
+  const noseBand=clamp(1-Math.abs(side)/0.40,0,1)*clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*.92+.001)),0,1);
+  x += yaw*c.noseShift*scale*noseBand*.42*gp;
 
-  // nose bridge-ish shift, central vertical band follows yaw more.
-  const noseBand=clamp(1-Math.abs(side)/0.38,0,1)*clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*.90+.001)),0,1);
-  x += yaw*(c.noseShift||0)*scale*noseBand*.35;
+  // Chin turn
+  const chx=(x-chin.x)/(c.faceRadius*scale*.60+.001), chy=(y-chin.y)/(c.faceRadius*scale*.45+.001);
+  let chinInf=sCurve(clamp(1-Math.sqrt(chx*chx+chy*chy),0,1));
+  x += yaw*c.chinFollow*scale*chinInf*.34*gp;
+  y += Math.abs(yaw)*c.chinFollow*scale*chinInf*.08*gp;
 
-  // Chin follows head but drops/leans slightly on yaw.
-  const chx=(x-chin.x)/(c.faceRadius*scale*.58+.001), chy=(y-chin.y)/(c.faceRadius*scale*.42+.001);
-  let chinInf=clamp(1-Math.sqrt(chx*chx+chy*chy),0,1); chinInf=chinInf*chinInf;
-  x += yaw*c.chinFollow*scale*chinInf*.22;
-  y += Math.abs(yaw)*c.chinFollow*scale*chinInf*.06;
+  // Mouth deformation
+  const mx=(x-mouth.x)/(c.mouthRadius*scale*1.22+.001), my=(y-mouth.y)/(c.mouthRadius*scale*.86+.001);
+  let mi=sCurve(clamp(1-Math.sqrt(mx*mx+my*my),0,1));
+  const lower=Math.max(0,(y-mouth.y)/(c.mouthRadius*scale+.001));
+  const upper=Math.max(0,(mouth.y-y)/(c.mouthRadius*scale+.001));
+  const lipWeight = y > mouth.y ? 0.45+0.95*clamp(lower,0,1) : 0.20+0.25*clamp(upper,0,1);
+  y += mouthOpen*c.mouthOpenPower*scale*mi*lipWeight*gp;
+  x += (x-mouth.x)*mouthOpen*0.42*mi*gp;
+  x += Math.sign(x-mouth.x||1)*mouthOpen*14*scale*mi*clamp(Math.abs(mx),0,1)*gp;
+  const jawInf=smoothStep(p.mouth.y,p.chin.y+.18,v)*headInf;
+  y += mouthOpen*c.jawDrop*scale*jawInf*gp;
 
-  // Mouth mesh: not overlay. Upper lip barely moves, lower lip/jaw moves more.
-  const mx=(x-mouth.x)/(c.mouthRadius*scale*1.18+.001), my=(y-mouth.y)/(c.mouthRadius*scale*.82+.001);
-  let mi=clamp(1-Math.sqrt(mx*mx+my*my),0,1);
-  mi=mi*mi*(3-2*mi);
-  const lower=Math.max(0, (y-mouth.y)/(c.mouthRadius*scale+.001));
-  const upper=Math.max(0, (mouth.y-y)/(c.mouthRadius*scale+.001));
-  const lowerWeight=0.38+0.78*clamp(lower,0,1);
-  const upperWeight=0.20+0.22*clamp(upper,0,1);
-  const lipWeight = y > mouth.y ? lowerWeight : upperWeight;
-  y += mouthOpen*c.mouthOpenPower*scale*mi*lipWeight;
-  x += (x-mouth.x)*mouthOpen*0.30*mi; // horizontal vowel-like spread
-  // mouth corners slightly lift inward/outward
-  x += Math.sign(x-mouth.x)*mouthOpen*10*scale*mi*clamp(Math.abs(mx),0,1);
-
-  // Jaw region follows mouth, but smoothly blends down to chin.
-  const jawInf=smoothStep(p.mouth.y, p.chin.y+.18, v)*headInf;
-  y += mouthOpen*c.jawDrop*scale*jawInf;
-
-  // Blink mesh: pull eyelid vertices toward eye center, per-eye.
+  // Blink deformation
   const eyeWarp=(eye)=>{
-    const ex=(x-eye.x)/(c.eyeRadius*scale*1.15+.001), ey=(y-eye.y)/(c.eyeRadius*scale*.78+.001);
-    let ei=clamp(1-Math.sqrt(ex*ex+ey*ey),0,1);
-    ei=ei*ei*(3-2*ei);
-    // Collapse toward eye center; upper lid stronger than lower.
+    const ex=(x-eye.x)/(c.eyeRadius*scale*1.18+.001), ey=(y-eye.y)/(c.eyeRadius*scale*.80+.001);
+    let ei=sCurve(clamp(1-Math.sqrt(ex*ex+ey*ey),0,1));
     const toward=(eye.y-y);
-    const upperLid = y < eye.y ? 1.0 : 0.55;
-    y += toward*blink*(c.blinkPower/100)*0.92*ei*upperLid;
-    x += (eye.x-x)*blink*0.10*ei;
-    // face turn squashes far eye a little
-    x += yaw*(eye.x < face.x ? -1 : 1)*4*scale*ei*headInf;
+    const upperLid=y<eye.y?1.12:0.62;
+    y += toward*blink*(c.blinkPower/100)*1.05*ei*upperLid*gp;
+    x += (eye.x-x)*blink*0.13*ei*gp;
   };
-  eyeWarp(leftEye); eyeWarp(rightEye);
+  eyeWarp(leftEye);
+  eyeWarp(rightEye);
 
   return {x,y};
 }
-
-function smoothStep(a,b,x){
-  const t=clamp((x-a)/(b-a+.0001),0,1);
-  return t*t*(3-2*t);
-}
-
-function normPoints(){
-  const def={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};
-  return Object.fromEntries(Object.entries(def).map(([k,v])=>[k,state.points[k]||v]));
-}
-function toPixel(q,r){return{x:r.x+q.x*r.w,y:r.y+q.y*r.h};}
-function smoothBand(v,a,b){return clamp((v-a)/(b-a+.0001),0,1);}
 
 function drawTri(g,p0,p1,p2){
   const iw=state.image.width,ih=state.image.height;
   const sx0=p0.u*iw,sy0=p0.v*ih,sx1=p1.u*iw,sy1=p1.v*ih,sx2=p2.u*iw,sy2=p2.v*ih;
   let dx0=p0.x,dy0=p0.y,dx1=p1.x,dy1=p1.y,dx2=p2.x,dy2=p2.y;
 
-  // Tiny outward expansion reduces hairline seams between triangles.
-  const cx=(dx0+dx1+dx2)/3, cy=(dy0+dy1+dy2)/3;
-  const expand=0.35;
-  const push=(x,y)=>{
-    const vx=x-cx,vy=y-cy,len=Math.hypot(vx,vy)||1;
-    return {x:x+vx/len*expand,y:y+vy/len*expand};
-  };
+  // Expand triangles a hair to hide seams.
+  const cx=(dx0+dx1+dx2)/3,cy=(dy0+dy1+dy2)/3;
+  const expand=.45;
+  const push=(x,y)=>{const vx=x-cx,vy=y-cy,len=Math.hypot(vx,vy)||1;return{x:x+vx/len*expand,y:y+vy/len*expand};};
   const q0=push(dx0,dy0),q1=push(dx1,dy1),q2=push(dx2,dy2);
   dx0=q0.x;dy0=q0.y;dx1=q1.x;dy1=q1.y;dx2=q2.x;dy2=q2.y;
 
@@ -369,25 +370,35 @@ function drawTri(g,p0,p1,p2){
   const d=(dy0*(sx2-sx1)+dy1*(sx0-sx2)+dy2*(sx1-sx0))/denom;
   const e=(dx0*(sx1*sy2-sx2*sy1)+dx1*(sx2*sy0-sx0*sy2)+dx2*(sx0*sy1-sx1*sy0))/denom;
   const f=(dy0*(sx1*sy2-sx2*sy1)+dy1*(sx2*sy0-sx0*sy2)+dy2*(sx0*sy1-sx1*sy0))/denom;
+
   g.save();
   g.beginPath();
   g.moveTo(dx0,dy0);g.lineTo(dx1,dy1);g.lineTo(dx2,dy2);g.closePath();
   g.clip();
-  g.setTransform(a,b,c,d,e,f);
+  g.transform(a,b,c,d,e,f);
   g.imageSmoothingEnabled=true;
-  g.imageSmoothingQuality="high";
   g.drawImage(state.image,0,0);
   g.restore();
 }
 
+function normPoints(){
+  const def={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};
+  return Object.fromEntries(Object.entries(def).map(([k,v])=>[k,state.points[k]||v]));
+}
+function toPixel(q,r){return{x:r.x+q.x*r.w,y:r.y+q.y*r.h};}
+function smoothStep(a,b,x){const t=clamp((x-a)/(b-a+.0001),0,1);return t*t*(3-2*t);}
+function sCurve(t){return t*t*(3-2*t);}
+
 function drawGuides(g,r){
-  const p=normPoints(),scale=r.w/900;
-  const face=toPixel(p.face,r),mouth=toPixel(p.mouth,r);
+  const p=normPoints(),scale=r.w/900,face=toPixel(p.face,r),mouth=toPixel(p.mouth,r),leftEye=toPixel(p.leftEye,r),rightEye=toPixel(p.rightEye,r);
   g.save();
-  g.strokeStyle="rgba(126,231,255,.55)";g.lineWidth=2;
+  g.strokeStyle="rgba(126,231,255,.7)";g.lineWidth=2;
   g.beginPath();g.arc(face.x,face.y,state.controls.faceRadius*scale,0,Math.PI*2);g.stroke();
-  g.strokeStyle="rgba(255,122,217,.55)";
+  g.strokeStyle="rgba(255,122,217,.7)";
   g.beginPath();g.arc(mouth.x,mouth.y,state.controls.mouthRadius*scale,0,Math.PI*2);g.stroke();
+  g.strokeStyle="rgba(255,230,109,.7)";
+  g.beginPath();g.arc(leftEye.x,leftEye.y,state.controls.eyeRadius*scale,0,Math.PI*2);g.stroke();
+  g.beginPath();g.arc(rightEye.x,rightEye.y,state.controls.eyeRadius*scale,0,Math.PI*2);g.stroke();
   g.restore();
 }
 function drawPoints(g,r){
@@ -426,25 +437,25 @@ function updateMic(){
   state.mic.level=state.mic.level*.62+clamp(rms*state.controls.mouthSensitivity*.75,0,1)*.38;
 }
 
-function triggerBlink(manual=false){state.manual.blinkBoost=1.35;if(manual)state.doubleBlink=false;}
+function triggerBlink(manual=false){state.manual.blinkBoost=1.55;if(manual)state.doubleBlink=false;}
 function scheduleBlink(){state.nextBlink=performance.now()+2200+Math.random()*4200;state.doubleBlink=Math.random()<.18;}
 function updateMotion(now){
   const c=state.controls,m=state.motion?1:0;
   let targetYaw=c.manualYaw/100;
-  if(state.autoYaw)targetYaw=Math.sin(state.t*.026)*.75;
+  if(state.autoYaw)targetYaw=Math.sin(state.t*.030)*0.92;
   if(state.cameraOn)targetYaw=state.track.yaw;
   targetYaw+=state.manual.yawKey*.9;
   state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),c.trackingSpeed);
 
   const headTarget=state.smooth.yaw*c.headShift*m;
-  state.smooth.headX=lerp(state.smooth.headX,headTarget,.18);
-  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*2.2*m,.10);
-  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*.30,.15*(1-c.neckLag*.72));
-  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*.46,.14*(1-c.hairLag*.74));
+  state.smooth.headX=lerp(state.smooth.headX,headTarget,.20);
+  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*2.0*m,.12);
+  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*.32,.16*(1-c.neckLag*.72));
+  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*.50,.15*(1-c.hairLag*.74));
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.34);
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.38);
   state.manual.talking*=.80;
 
   let targetBlink=state.manual.blinkBoost;
@@ -454,11 +465,9 @@ function updateMotion(now){
     if(state.doubleBlink)state.nextBlink=now+150;else scheduleBlink();
     state.doubleBlink=false;
   }
-  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.46);
+  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.50);
   state.manual.blinkBoost*=.55;
 
-  state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)-state.smooth.yaw*.55,.035);
-  state.smooth.eyeY=lerp(state.smooth.eyeY,Math.sin(state.t*.013),.03);
   updateMeters();
 }
 function updateMeters(){
@@ -468,15 +477,15 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.1",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.2",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v21",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v21");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v22",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v22");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
