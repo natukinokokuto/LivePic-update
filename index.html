@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.2 Auto Parts Generator</title>
+  <title>LivePic v3.3 Local Segmentation Parts</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>アプリ内で自動パーツ分けPNGを生成する版。</p>
+    <p>ローカル色分類セグメンテーションでパーツ分けする版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">Live2D寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.2 Auto Parts</span>
+    <span class="pill">v3.3 Segmentation</span>
   </div>
 </header>
 
@@ -86,6 +86,15 @@
       <button id="previewPartsBtn">パーツ確認</button>
     </div>
     <div id="partsStatus" class="hint">顔・髪・目・口・首・体・穴埋めベースをアプリ内で生成します。</div>
+    <div class="row">
+      <button id="segmentationBtn" class="primary">色分類セグメント生成</button>
+      <button id="segDebugBtn">分類表示 ON</button>
+    </div>
+    <div class="row">
+      <button id="segPartsBtn">分類からパーツ生成</button>
+      <button id="segDownloadBtn">分類PNG保存</button>
+    </div>
+    <div id="segStatus" class="hint">肌・髪・目・口・服をローカルで色分類します。</div>
     <div id="partsPreview" class="parts-preview"></div>
 
     <div id="maskStatus" class="hint">顔・目・口・髪の疑似マスクを作って、元絵の穴を周囲色で埋めます。</div>
@@ -186,6 +195,15 @@
     <input id="contourSmooth" type="range" min="0" max="20" value="6">
     <label>肌色補完サンプル <span id="skinSampleRadiusVal"></span></label>
     <input id="skinSampleRadius" type="range" min="5" max="60" value="24">
+    <label>色分類モード <input id="segmentationMode" type="checkbox" checked></label>
+    <label>肌検出幅 <span id="skinToleranceVal"></span></label>
+    <input id="skinTolerance" type="range" min="20" max="150" value="76">
+    <label>髪検出幅 <span id="hairToleranceVal"></span></label>
+    <input id="hairTolerance" type="range" min="20" max="180" value="98">
+    <label>口赤検出 <span id="mouthRedBoostVal"></span></label>
+    <input id="mouthRedBoost" type="range" min="0.5" max="3.0" step="0.1" value="1.6">
+    <label>分類なめらか <span id="segSmoothVal"></span></label>
+    <input id="segSmooth" type="range" min="0" max="20" value="6">
     <label>メッシュ密度 <span id="meshDensityVal"></span></label>
     <input id="meshDensity" type="range" min="10" max="70" value="36">
     <label>全体変形倍率 <span id="globalPowerVal"></span></label>

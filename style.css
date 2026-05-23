@@ -68,3 +68,5 @@ body.obs-mode{background:transparent;overflow:hidden}body.obs-mode .app-header,b
   background-position:0 0,0 8px,8px -8px,-8px 0;
   border-radius:8px;
 }
+
+.seg-chip{display:inline-block;padding:2px 6px;border-radius:999px;background:rgba(126,231,255,.14);color:var(--accent);margin-left:4px}
