@@ -15,11 +15,11 @@ const state={
   tool:"face",motion:true,obs:false,debug:true,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,meshDensity:34,faceRadius:240,yawBoost:2.5,manualYaw:0,
-    headShift:42,faceSquash:0.19,chinFollow:34,hairLag:0.72,neckLag:0.54,
-    mouthSensitivity:8.5,mouthOpenPower:105,mouthRadius:72,jawDrop:48,
-    blinkSensitivity:7.0,blinkPower:68,eyeRadius:58,
-    breath:9,trackingSpeed:0.24
+    meshEnabled:true,meshDensity:48,faceRadius:245,yawBoost:2.7,manualYaw:0,
+    headShift:36,faceSquash:0.13,cheekPower:34,noseShift:24,chinFollow:42,hairLag:0.76,neckLag:0.58,
+    mouthSensitivity:8.8,mouthOpenPower:118,mouthRadius:86,jawDrop:58,
+    blinkSensitivity:7.4,blinkPower:82,eyeRadius:66,
+    breath:7,trackingSpeed:0.26
   },
   track:{yaw:0,mouth:0,blink:0,hasFace:false},
   smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0,eyeX:0,eyeY:0},
@@ -115,11 +115,11 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,meshDensity:34,faceRadius:240,yawBoost:2.5,manualYaw:0,
-    headShift:42,faceSquash:0.19,chinFollow:34,hairLag:0.72,neckLag:0.54,
-    mouthSensitivity:8.5,mouthOpenPower:105,mouthRadius:72,jawDrop:48,
-    blinkSensitivity:7.0,blinkPower:68,eyeRadius:58,
-    breath:9,trackingSpeed:0.24
+    meshEnabled:true,meshDensity:48,faceRadius:245,yawBoost:2.7,manualYaw:0,
+    headShift:36,faceSquash:0.13,cheekPower:34,noseShift:24,chinFollow:42,hairLag:0.76,neckLag:0.58,
+    mouthSensitivity:8.8,mouthOpenPower:118,mouthRadius:86,jawDrop:58,
+    blinkSensitivity:7.4,blinkPower:82,eyeRadius:66,
+    breath:7,trackingSpeed:0.26
   });
   updateLabels();
   alert("IRIAM寄せプリセットを適用しました");
@@ -220,7 +220,7 @@ function draw(g,w,h,editor){
 
 function drawWarpedMesh(g,r){
   const n=Math.floor(state.controls.meshDensity);
-  const cols=n,rows=Math.floor(n*state.image.height/state.image.width);
+  const cols=n,rows=Math.max(18, Math.floor(n*state.image.height/state.image.width));
   const verts=[];
   for(let y=0;y<=rows;y++){
     for(let x=0;x<=cols;x++){
@@ -251,56 +251,92 @@ function warpPoint(u,v,r){
   const mouthOpen=state.smooth.mouth;
   const blink=state.smooth.blink;
 
-  // chest breathing: lower body only, no flying
-  const bodyInf=smoothBand(v,p.neck.y,1.0);
-  y += Math.sin(state.t*.035)*c.breath*scale*0.18*bodyInf;
-  x += Math.sin(state.t*.020)*1.8*scale*bodyInf;
+  // Stable chest breathing only below neck. No "flying".
+  const bodyInf=smoothStep(p.neck.y, 1.0, v);
+  y += Math.sin(state.t*.035)*c.breath*scale*0.13*bodyInf;
+  x += Math.sin(state.t*.020)*0.9*scale*bodyInf;
 
-  // head region
-  const dx=x-face.x,dy=y-face.y;
-  const dFace=Math.hypot(dx,dy);
-  let headInf=clamp(1-dFace/(c.faceRadius*scale),0,1);
+  // Head influence: oval weighting, not circle only.
+  const ox=(x-face.x)/(c.faceRadius*scale*0.92+.001);
+  const oy=(y-face.y)/(c.faceRadius*scale*1.24+.001);
+  let headInf=clamp(1-Math.sqrt(ox*ox+oy*oy),0,1);
   headInf=headInf*headInf*(3-2*headInf);
 
-  // head shift and pseudo perspective
+  // Hair and neck are separate delayed-ish regions
+  const hx=(x-hair.x)/(c.faceRadius*scale*.95+.001), hy=(y-hair.y)/(c.faceRadius*scale*.76+.001);
+  let hairInf=clamp(1-Math.sqrt(hx*hx+hy*hy),0,1); hairInf=hairInf*hairInf;
+
+  const nx=(x-neck.x)/(c.faceRadius*scale*.42+.001), ny=(y-neck.y)/(c.faceRadius*scale*.36+.001);
+  let neckInf=clamp(1-Math.sqrt(nx*nx+ny*ny),0,1); neckInf=neckInf*neckInf;
+
+  // IRIAM-like head shift: face moves, neck less, hair counters with lag.
   x += state.smooth.headX*scale*headInf;
   y += state.smooth.headY*scale*headInf;
-  const side=dx/(c.faceRadius*scale+.001);
-  x += yaw*c.headShift*scale*headInf*(1-Math.abs(side)*.22);
-  x += -yaw*c.faceSquash*32*scale*headInf*side; // one side compress, one side expand
-  y += Math.abs(yaw)*c.faceSquash*10*scale*headInf*Math.sign(dy)*0.35;
-
-  // hair lag opposite/slower
-  const dHair=Math.hypot(x-hair.x,y-hair.y);
-  let hairInf=clamp(1-dHair/(c.faceRadius*scale*.9),0,1);hairInf=hairInf*hairInf;
+  x += state.smooth.neckX*scale*neckInf;
   x += state.smooth.hairX*scale*hairInf;
 
-  // neck lag
-  const dNeck=Math.hypot(x-neck.x,y-neck.y);
-  let neckInf=clamp(1-dNeck/(c.faceRadius*scale*.55),0,1);neckInf=neckInf*neckInf;
-  x += state.smooth.neckX*scale*neckInf;
+  // Pseudo 3D face turn: center shifts, far side compresses, near cheek expands.
+  const side=(x-face.x)/(c.faceRadius*scale+.001);
+  const verticalFace=clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*1.25+.001)),0,1);
+  const cheekInf=headInf*verticalFace;
+  x += yaw*c.headShift*scale*cheekInf*(1-Math.abs(side)*.18);
+  x += -yaw*c.faceSquash*44*scale*cheekInf*side;
 
-  // mouth mesh deformation: pull local vertices, not draw black ellipse
-  const dMouth=Math.hypot(x-mouth.x,y-mouth.y);
-  let mi=clamp(1-dMouth/(c.mouthRadius*scale),0,1);mi=mi*mi*(3-2*mi);
-  const mouthVertical=(y>=mouth.y-22*scale)?1:0.45;
-  y += mouthOpen*c.mouthOpenPower*scale*mi*mouthVertical;
-  x += (x-mouth.x)*mouthOpen*0.22*mi; // mouth opens/widens
-  // jaw follows
-  const jawInf=smoothBand(v,p.mouth.y,p.chin.y+.10);
-  y += mouthOpen*c.jawDrop*scale*jawInf*headInf;
+  // cheek volume: one cheek forward, other back. Subtle but makes it less rubber-sheet.
+  const cheekPower=(c.cheekPower||0)*scale;
+  const cheekSign = side >= 0 ? 1 : -1;
+  x += yaw*cheekPower*cheekInf*0.18*cheekSign*(1-Math.abs(side));
+  y += Math.abs(yaw)*cheekPower*0.035*cheekInf*Math.sign(y-face.y);
 
-  // blink mesh deformation: collapse eye zones toward eye center
+  // nose bridge-ish shift, central vertical band follows yaw more.
+  const noseBand=clamp(1-Math.abs(side)/0.38,0,1)*clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*.90+.001)),0,1);
+  x += yaw*(c.noseShift||0)*scale*noseBand*.35;
+
+  // Chin follows head but drops/leans slightly on yaw.
+  const chx=(x-chin.x)/(c.faceRadius*scale*.58+.001), chy=(y-chin.y)/(c.faceRadius*scale*.42+.001);
+  let chinInf=clamp(1-Math.sqrt(chx*chx+chy*chy),0,1); chinInf=chinInf*chinInf;
+  x += yaw*c.chinFollow*scale*chinInf*.22;
+  y += Math.abs(yaw)*c.chinFollow*scale*chinInf*.06;
+
+  // Mouth mesh: not overlay. Upper lip barely moves, lower lip/jaw moves more.
+  const mx=(x-mouth.x)/(c.mouthRadius*scale*1.18+.001), my=(y-mouth.y)/(c.mouthRadius*scale*.82+.001);
+  let mi=clamp(1-Math.sqrt(mx*mx+my*my),0,1);
+  mi=mi*mi*(3-2*mi);
+  const lower=Math.max(0, (y-mouth.y)/(c.mouthRadius*scale+.001));
+  const upper=Math.max(0, (mouth.y-y)/(c.mouthRadius*scale+.001));
+  const lowerWeight=0.38+0.78*clamp(lower,0,1);
+  const upperWeight=0.20+0.22*clamp(upper,0,1);
+  const lipWeight = y > mouth.y ? lowerWeight : upperWeight;
+  y += mouthOpen*c.mouthOpenPower*scale*mi*lipWeight;
+  x += (x-mouth.x)*mouthOpen*0.30*mi; // horizontal vowel-like spread
+  // mouth corners slightly lift inward/outward
+  x += Math.sign(x-mouth.x)*mouthOpen*10*scale*mi*clamp(Math.abs(mx),0,1);
+
+  // Jaw region follows mouth, but smoothly blends down to chin.
+  const jawInf=smoothStep(p.mouth.y, p.chin.y+.18, v)*headInf;
+  y += mouthOpen*c.jawDrop*scale*jawInf;
+
+  // Blink mesh: pull eyelid vertices toward eye center, per-eye.
   const eyeWarp=(eye)=>{
-    const dEye=Math.hypot(x-eye.x,y-eye.y);
-    let ei=clamp(1-dEye/(c.eyeRadius*scale),0,1);ei=ei*ei*(3-2*ei);
-    const collapse=(eye.y-y)*blink*(c.blinkPower/100)*0.70*ei;
-    y += collapse;
-    x += (eye.x-x)*blink*0.08*ei;
+    const ex=(x-eye.x)/(c.eyeRadius*scale*1.15+.001), ey=(y-eye.y)/(c.eyeRadius*scale*.78+.001);
+    let ei=clamp(1-Math.sqrt(ex*ex+ey*ey),0,1);
+    ei=ei*ei*(3-2*ei);
+    // Collapse toward eye center; upper lid stronger than lower.
+    const toward=(eye.y-y);
+    const upperLid = y < eye.y ? 1.0 : 0.55;
+    y += toward*blink*(c.blinkPower/100)*0.92*ei*upperLid;
+    x += (eye.x-x)*blink*0.10*ei;
+    // face turn squashes far eye a little
+    x += yaw*(eye.x < face.x ? -1 : 1)*4*scale*ei*headInf;
   };
-  eyeWarp(leftEye);eyeWarp(rightEye);
+  eyeWarp(leftEye); eyeWarp(rightEye);
 
   return {x,y};
+}
+
+function smoothStep(a,b,x){
+  const t=clamp((x-a)/(b-a+.0001),0,1);
+  return t*t*(3-2*t);
 }
 
 function normPoints(){
@@ -313,7 +349,18 @@ function smoothBand(v,a,b){return clamp((v-a)/(b-a+.0001),0,1);}
 function drawTri(g,p0,p1,p2){
   const iw=state.image.width,ih=state.image.height;
   const sx0=p0.u*iw,sy0=p0.v*ih,sx1=p1.u*iw,sy1=p1.v*ih,sx2=p2.u*iw,sy2=p2.v*ih;
-  const dx0=p0.x,dy0=p0.y,dx1=p1.x,dy1=p1.y,dx2=p2.x,dy2=p2.y;
+  let dx0=p0.x,dy0=p0.y,dx1=p1.x,dy1=p1.y,dx2=p2.x,dy2=p2.y;
+
+  // Tiny outward expansion reduces hairline seams between triangles.
+  const cx=(dx0+dx1+dx2)/3, cy=(dy0+dy1+dy2)/3;
+  const expand=0.35;
+  const push=(x,y)=>{
+    const vx=x-cx,vy=y-cy,len=Math.hypot(vx,vy)||1;
+    return {x:x+vx/len*expand,y:y+vy/len*expand};
+  };
+  const q0=push(dx0,dy0),q1=push(dx1,dy1),q2=push(dx2,dy2);
+  dx0=q0.x;dy0=q0.y;dx1=q1.x;dy1=q1.y;dx2=q2.x;dy2=q2.y;
+
   const denom=sx0*(sy1-sy2)+sx1*(sy2-sy0)+sx2*(sy0-sy1);
   if(Math.abs(denom)<.0001)return;
   const a=(dx0*(sy1-sy2)+dx1*(sy2-sy0)+dx2*(sy0-sy1))/denom;
@@ -327,6 +374,8 @@ function drawTri(g,p0,p1,p2){
   g.moveTo(dx0,dy0);g.lineTo(dx1,dy1);g.lineTo(dx2,dy2);g.closePath();
   g.clip();
   g.setTransform(a,b,c,d,e,f);
+  g.imageSmoothingEnabled=true;
+  g.imageSmoothingQuality="high";
   g.drawImage(state.image,0,0);
   g.restore();
 }
@@ -388,14 +437,14 @@ function updateMotion(now){
   state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),c.trackingSpeed);
 
   const headTarget=state.smooth.yaw*c.headShift*m;
-  state.smooth.headX=lerp(state.smooth.headX,headTarget,.16);
-  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*3*m,.10);
-  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*.42,.16*(1-c.neckLag*.7));
-  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*.62,.16*(1-c.hairLag*.72));
+  state.smooth.headX=lerp(state.smooth.headX,headTarget,.18);
+  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*2.2*m,.10);
+  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*.30,.15*(1-c.neckLag*.72));
+  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*.46,.14*(1-c.hairLag*.74));
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.36);
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.34);
   state.manual.talking*=.80;
 
   let targetBlink=state.manual.blinkBoost;
@@ -405,7 +454,7 @@ function updateMotion(now){
     if(state.doubleBlink)state.nextBlink=now+150;else scheduleBlink();
     state.doubleBlink=false;
   }
-  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.52);
+  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.46);
   state.manual.blinkBoost*=.55;
 
   state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)-state.smooth.yaw*.55,.035);
@@ -419,10 +468,10 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.0",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.1",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v20",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v20");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v21",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v21");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{

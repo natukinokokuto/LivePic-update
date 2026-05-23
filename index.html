@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v2.0 Real Mesh Engine Alpha</title>
+  <title>LivePic v2.1 Refined Mesh Engine Alpha</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>本物の三角メッシュ変形エンジンα版。黒い口を乗せる方式ではなく、画像そのものを変形します。</p>
+    <p>三角メッシュを細かくし、頬・顎・口・瞬きをIRIAM方向に寄せた調整版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">IRIAM寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v2.0 Real Mesh</span>
+    <span class="pill">v2.1 Refined Mesh</span>
   </div>
 </header>
 
@@ -108,7 +108,7 @@
     <h2>本物メッシュ</h2>
     <label>メッシュ変形 <input id="meshEnabled" type="checkbox" checked></label>
     <label>メッシュ密度 <span id="meshDensityVal"></span></label>
-    <input id="meshDensity" type="range" min="14" max="60" value="34">
+    <input id="meshDensity" type="range" min="14" max="60" value="66">
     <label>変形範囲 <span id="faceRadiusVal"></span></label>
     <input id="faceRadius" type="range" min="70" max="420" value="240">
     <label>顔向き増幅 <span id="yawBoostVal"></span></label>
@@ -118,11 +118,15 @@
 
     <h2>IRIAM寄せ変形</h2>
     <label>頭の移動 <span id="headShiftVal"></span></label>
-    <input id="headShift" type="range" min="0" max="90" value="42">
+    <input id="headShift" type="range" min="0" max="90" value="36">
     <label>顔の圧縮 <span id="faceSquashVal"></span></label>
-    <input id="faceSquash" type="range" min="0" max="0.45" step="0.01" value="0.19">
+    <input id="faceSquash" type="range" min="0" max="0.45" step="0.01" value="0.13">
+    <label>頬の立体感 <span id="cheekPowerVal"></span></label>
+    <input id="cheekPower" type="range" min="0" max="80" value="34">
+    <label>鼻筋シフト <span id="noseShiftVal"></span></label>
+    <input id="noseShift" type="range" min="0" max="70" value="24">
     <label>顎の追従 <span id="chinFollowVal"></span></label>
-    <input id="chinFollow" type="range" min="0" max="70" value="34">
+    <input id="chinFollow" type="range" min="0" max="70" value="42">
     <label>髪の遅れ <span id="hairLagVal"></span></label>
     <input id="hairLag" type="range" min="0" max="1" step="0.05" value="0.72">
     <label>首の遅れ <span id="neckLagVal"></span></label>
@@ -132,9 +136,9 @@
     <label>口感度 <span id="mouthSensitivityVal"></span></label>
     <input id="mouthSensitivity" type="range" min="1" max="14" step="0.1" value="8.5">
     <label>口開き強さ <span id="mouthOpenPowerVal"></span></label>
-    <input id="mouthOpenPower" type="range" min="0" max="160" value="105">
+    <input id="mouthOpenPower" type="range" min="0" max="160" value="118">
     <label>口周辺範囲 <span id="mouthRadiusVal"></span></label>
-    <input id="mouthRadius" type="range" min="25" max="160" value="72">
+    <input id="mouthRadius" type="range" min="25" max="160" value="86">
     <label>あご落ち <span id="jawDropVal"></span></label>
     <input id="jawDrop" type="range" min="0" max="120" value="48">
 
@@ -142,7 +146,7 @@
     <label>瞬き感度 <span id="blinkSensitivityVal"></span></label>
     <input id="blinkSensitivity" type="range" min="1" max="14" step="0.1" value="7.0">
     <label>瞬き強さ <span id="blinkPowerVal"></span></label>
-    <input id="blinkPower" type="range" min="0" max="100" value="68">
+    <input id="blinkPower" type="range" min="0" max="100" value="82">
     <label>目周辺範囲 <span id="eyeRadiusVal"></span></label>
     <input id="eyeRadius" type="range" min="20" max="140" value="58">
 
