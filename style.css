@@ -70,3 +70,21 @@ body.obs-mode{background:transparent;overflow:hidden}body.obs-mode .app-header,b
 }
 
 .seg-chip{display:inline-block;padding:2px 6px;border-radius:999px;background:rgba(126,231,255,.14);color:var(--accent);margin-left:4px}
+
+.error-box{
+  border:1px solid rgba(255,120,144,.35);
+  border-radius:10px;
+  padding:7px;
+  background:rgba(255,80,110,.06);
+  color:#ffb0be;
+  max-height:80px;
+  overflow:auto;
+}
+.motion-flash{
+  animation: motionFlash .35s ease;
+}
+@keyframes motionFlash{
+  0%{box-shadow:0 0 0 0 rgba(126,231,255,.0)}
+  50%{box-shadow:0 0 0 4px rgba(126,231,255,.35)}
+  100%{box-shadow:0 0 0 0 rgba(126,231,255,.0)}
+}

@@ -64,6 +64,40 @@ function setDebugStatus(kind,text){
 }
 
 
+
+function reportError(msg,err){
+  const el=document.getElementById("errorStatus");
+  const text = err ? `${msg}: ${err.message || err}` : msg;
+  if(el) el.textContent=text;
+  console.error(text, err || "");
+}
+function clearError(){
+  const el=document.getElementById("errorStatus");
+  if(el) el.textContent="エラーなし";
+}
+function onClickSafe(id,fn){
+  const el=document.getElementById(id);
+  if(!el){
+    console.warn("missing element",id);
+    return;
+  }
+  el.onclick=(ev)=>{
+    try{
+      clearError();
+      fn(ev);
+    }catch(err){
+      reportError(id+" 実行エラー",err);
+    }
+  };
+}
+function flashStage(){
+  const st=document.getElementById("stage");
+  if(!st)return;
+  st.classList.remove("motion-flash");
+  void st.offsetWidth;
+  st.classList.add("motion-flash");
+}
+
 function wire(){
   window.addEventListener("resize",()=>{fitCanvas();fitObs();});
   document.getElementById("fileInput").addEventListener("change",e=>{const f=e.target.files[0];if(f)loadFile(f);});
@@ -139,6 +173,168 @@ function wire(){
     if(e.code==="KeyB")triggerBlink(true);
   });
   window.addEventListener("keyup",e=>{if(["KeyA","KeyD"].includes(e.code))state.manual.yawKey=0;});
+  robustReconnectButtons();
+}
+
+
+function robustReconnectButtons(){
+  onClickSafe("sampleBtn", loadSample);
+  onClickSafe("autoPartsBtn", generateAutoPartsSafe);
+  onClickSafe("segmentationBtn", generateLocalSegmentationSafe);
+  onClickSafe("segPartsBtn", generatePartsFromSegmentationSafe);
+  onClickSafe("applyPartsRigBtn", applyGeneratedPartsRigSafe);
+  onClickSafe("sampleRigBtn", applySampleRigPresetSafe);
+  onClickSafe("oneClickRigBtn", oneClickAutoRig);
+  onClickSafe("panicResetBtn", panicReset);
+  onClickSafe("talkBtn", forceTalkMotion);
+  onClickSafe("blinkBtn", forceBlinkMotion);
+  onClickSafe("forceMotionBtn", forceBigMotion);
+  onClickSafe("exprSmileBtn", ()=>applyExpression("smile"));
+  onClickSafe("exprResetBtn", ()=>applyExpression("neutral"));
+}
+
+function generateAutoPartsSafe(){
+  ensureImageAndPoints();
+  if(state.controls.segmentationMode){
+    generateLocalSegmentationSafe();
+    generatePartsFromSegmentationSafe();
+  }else{
+    generateAutoParts();
+  }
+  renderPartsPreview();
+  flashStage();
+}
+function generateLocalSegmentationSafe(){
+  ensureImageAndPoints();
+  generateLocalSegmentation();
+  flashStage();
+}
+function generatePartsFromSegmentationSafe(){
+  ensureImageAndPoints();
+  if(!state.segmentation) generateLocalSegmentation();
+  generatePartsFromSegmentation();
+  renderPartsPreview();
+  flashStage();
+}
+function applyGeneratedPartsRigSafe(){
+  ensureImageAndPoints();
+  if(!state.parts){
+    generateAutoPartsSafe();
+  }
+  applyGeneratedPartsRig();
+  ensureMotionVisibleDefaults();
+  flashStage();
+}
+function applySampleRigPresetSafe(){
+  ensureImageAndPoints();
+  applySampleRigPreset();
+  ensureMotionVisibleDefaults();
+  flashStage();
+}
+
+function ensureImageAndPoints(){
+  if(!state.image){
+    loadSample();
+    throw new Error("画像を読み込み中です。もう一度押してください。");
+  }
+  const p=normPoints();
+  if(!state.points.face) autoPoints();
+}
+
+function ensureMotionVisibleDefaults(){
+  Object.assign(state.controls,{
+    cutoutLayerMode:true,
+    live2dLayerMode:true,
+    boneRigMode:true,
+    safeDeform:true,
+    meshEnabled:false,
+    safeUnderlay:true,
+    showPins:false,
+    showGuideCircles:false,
+    showMaskOverlay:false,
+    meshOpacity:0.35,
+    mouthLayerOpen:1.8,
+    mouthLayerDrop:42,
+    mouthCloseSnap:0.15,
+    mouthSmile:0.10,
+    eyeLayerClose:1.75,
+    eyeLayerFollow:0.65,
+    upperLid:1.0,
+    lowerLid:0.20,
+    blinkPower:120,
+    mouthSensitivity:12,
+    blinkSensitivity:12
+  });
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  updateLabels();
+}
+
+function forceTalkMotion(){
+  ensureMotionVisibleDefaults();
+  state.manual.talking=1.8;
+  state.smooth.mouth=1.0;
+  const btn=document.getElementById("talkBtn");
+  if(btn) btn.textContent="口パク中";
+  setTimeout(()=>{ if(btn) btn.textContent="口パクテスト"; }, 600);
+  flashStage();
+}
+function forceBlinkMotion(){
+  ensureMotionVisibleDefaults();
+  triggerBlink(true);
+  state.smooth.blink=1.0;
+  const btn=document.getElementById("blinkBtn");
+  if(btn) btn.textContent="瞬き中";
+  setTimeout(()=>{ if(btn) btn.textContent="瞬きテスト"; }, 600);
+  flashStage();
+}
+function forceBigMotion(){
+  ensureMotionVisibleDefaults();
+  state.manual.talking=1.8;
+  state.smooth.mouth=1.0;
+  state.smooth.blink=1.0;
+  state.autoYaw=true;
+  const ay=document.getElementById("autoYawBtn");
+  if(ay) ay.textContent="顔向き自動 ON";
+  flashStage();
+}
+function oneClickAutoRig(){
+  ensureImageAndPoints();
+  generateLocalSegmentationSafe();
+  generatePartsFromSegmentationSafe();
+  applyGeneratedPartsRigSafe();
+  ensureMotionVisibleDefaults();
+  state.manual.talking=1.4;
+  state.smooth.mouth=1.0;
+  state.smooth.blink=1.0;
+  setPartsStatus("自動生成→リグ適用→動作確認まで実行しました","good");
+  flashStage();
+}
+function panicReset(){
+  state.smooth.mouth=0;
+  state.smooth.blink=0;
+  state.smooth.yaw=0;
+  state.manual.talking=0;
+  state.manual.blinkBoost=0;
+  state.autoYaw=false;
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  Object.assign(state.controls,{
+    showPins:false,
+    showGuideCircles:false,
+    showMaskOverlay:false,
+    meshEnabled:false,
+    safeUnderlay:true,
+    cutoutLayerMode:true,
+    live2dLayerMode:true
+  });
+  updateLabels();
+  const ay=document.getElementById("autoYawBtn");
+  if(ay) ay.textContent="顔向き自動 OFF";
+  setPartsStatus("表示/動作をリセットしました","warn");
+  flashStage();
 }
 
 function applyPreset(){
@@ -1347,9 +1543,55 @@ function drawCutoutLayers(g,r){
   g.drawImage(L.mouthLayer,r.x,r.y,r.w,r.h);
   g.restore();
 
-  if(state.showMasks && state.controls.showMaskOverlay){
+  
+  // Visible fallback for tests: if mask extraction is too tiny, draw subtle local eyelid/mouth shapes.
+  if(state.smooth.blink>0.05 || state.smooth.mouth>0.05){
+    drawMotionFallback(g,r,p,headMove,headY,rot,opacity);
+  }
+
+if(state.showMasks && state.controls.showMaskOverlay){
     drawMaskOverlays(g,r,L);
   }
+}
+
+
+function drawMotionFallback(g,r,p,headMove,headY,rot,opacity){
+  const blink=clamp(state.smooth.blink,0,1);
+  const mouth=clamp(state.smooth.mouth,0,1);
+  const scale=r.w/900;
+  g.save();
+  g.globalAlpha=opacity;
+
+  if(blink>0.05){
+    const drawLid=(pt)=>{
+      const x=r.x+pt.x*r.w+headMove*.65;
+      const y=r.y+pt.y*r.h+headY*.6;
+      g.save();
+      g.translate(x,y);
+      g.rotate(rot*.25);
+      g.fillStyle=`rgba(35,24,32,${0.20+blink*0.35})`;
+      g.beginPath();
+      g.ellipse(0,0,44*scale,Math.max(2,22*scale*blink),0,0,Math.PI*2);
+      g.fill();
+      g.restore();
+    };
+    drawLid(p.leftEye);
+    drawLid(p.rightEye);
+  }
+
+  if(mouth>0.05){
+    const x=r.x+p.mouth.x*r.w+headMove*.82;
+    const y=r.y+p.mouth.y*r.h+headY+mouth*18*scale;
+    g.save();
+    g.translate(x,y);
+    g.rotate(rot*.18);
+    g.fillStyle=`rgba(85,26,36,${0.18+mouth*0.35})`;
+    g.beginPath();
+    g.ellipse(0,0,28*scale*(1+mouth*.2),12*scale*(1+mouth*.8),0,0,Math.PI*2);
+    g.fill();
+    g.restore();
+  }
+  g.restore();
 }
 
 function drawMaskOverlays(g,r,L){
@@ -1700,8 +1942,8 @@ function updateMotion(now){
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.30);
-  state.manual.talking*=.68;
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.42);
+  state.manual.talking*=.62;
 
   let targetBlink=state.manual.blinkBoost;
   if(state.cameraOn)targetBlink=Math.max(targetBlink,state.track.blink);
@@ -1710,8 +1952,8 @@ function updateMotion(now){
     if(state.doubleBlink)state.nextBlink=now+150;else scheduleBlink();
     state.doubleBlink=false;
   }
-  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.50);
-  state.manual.blinkBoost*=.48;
+  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.62);
+  state.manual.blinkBoost*=.42;
 
   updateMeters();
 }
@@ -1733,10 +1975,10 @@ function openObs(q){
   fitObs();
 }
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"3.3",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"3.4",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v33",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v33");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v34",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v34");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{

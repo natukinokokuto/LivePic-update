@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.3 Local Segmentation Parts</title>
+  <title>LivePic v3.4 Buttons + Motion Fix</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>ローカル色分類セグメンテーションでパーツ分けする版。</p>
+    <p>ボタン操作と瞬き・口パクを復旧した安定化版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">Live2D寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.3 Segmentation</span>
+    <span class="pill">v3.4 Motion Fix</span>
   </div>
 </header>
 
@@ -85,7 +85,12 @@
       <button id="applyPartsRigBtn">生成パーツでリグ適用</button>
       <button id="previewPartsBtn">パーツ確認</button>
     </div>
+    <div class="row">
+      <button id="oneClickRigBtn" class="primary">自動生成→動作確認</button>
+      <button id="panicResetBtn">表示/動作リセット</button>
+    </div>
     <div id="partsStatus" class="hint">顔・髪・目・口・首・体・穴埋めベースをアプリ内で生成します。</div>
+    <div id="errorStatus" class="hint error-box">エラーなし</div>
     <div class="row">
       <button id="segmentationBtn" class="primary">色分類セグメント生成</button>
       <button id="segDebugBtn">分類表示 ON</button>
