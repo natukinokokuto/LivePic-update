@@ -193,3 +193,12 @@ body.obs-mode #closeObs{
   .layout{grid-template-columns:1fr}
   .stage{min-height:560px}
 }
+
+
+.sampleBtn{
+  margin-top:10px;
+}
+.stage.dragging{
+  outline:3px solid rgba(126,231,255,.45);
+  outline-offset:-8px;
+}

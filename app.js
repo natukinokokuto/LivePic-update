@@ -46,12 +46,60 @@ const pointColors = {
   neck:"#55efc4", body:"#74b9ff"
 };
 
+
+const sampleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <defs>
+    <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#29243f"/>
+      <stop offset="100%" stop-color="#151827"/>
+    </linearGradient>
+    <linearGradient id="cloth" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#dfe7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="1200" fill="none"/>
+  <ellipse cx="450" cy="1030" rx="250" ry="120" fill="#12131e" opacity=".25"/>
+  <path d="M250 520 C170 690 165 930 260 1090 L640 1090 C735 930 730 690 650 520 C610 420 300 420 250 520Z" fill="url(#cloth)" stroke="#30364e" stroke-width="8"/>
+  <path d="M305 625 C250 760 250 1000 330 1110" fill="none" stroke="#252944" stroke-width="42" stroke-linecap="round"/>
+  <path d="M595 625 C650 760 650 1000 570 1110" fill="none" stroke="#252944" stroke-width="42" stroke-linecap="round"/>
+  <path d="M375 520 L525 520 L505 650 L395 650Z" fill="#ffd8c8" stroke="#30364e" stroke-width="6"/>
+  <path d="M210 250 C210 95 330 45 450 45 C570 45 690 95 690 250 C720 500 695 790 620 980 C600 760 580 620 560 510 C520 560 380 560 340 510 C320 620 300 760 280 980 C205 790 180 500 210 250Z" fill="url(#hair)" stroke="#0d0f18" stroke-width="8"/>
+  <ellipse cx="450" cy="340" rx="205" ry="245" fill="#ffd8c8" stroke="#30364e" stroke-width="8"/>
+  <path d="M270 280 C330 150 570 150 630 280 C570 220 330 220 270 280Z" fill="url(#hair)"/>
+  <path d="M285 260 C330 135 520 110 610 235 C515 190 380 200 285 260Z" fill="url(#hair)" stroke="#0d0f18" stroke-width="5"/>
+  <ellipse cx="365" cy="355" rx="42" ry="34" fill="#ffffff"/>
+  <ellipse cx="535" cy="355" rx="42" ry="34" fill="#ffffff"/>
+  <circle cx="365" cy="358" r="20" fill="#8f69ff"/>
+  <circle cx="535" cy="358" r="20" fill="#8f69ff"/>
+  <circle cx="372" cy="348" r="7" fill="#ffffff"/>
+  <circle cx="542" cy="348" r="7" fill="#ffffff"/>
+  <path d="M330 310 C360 290 390 292 410 315" fill="none" stroke="#1a1d2c" stroke-width="10" stroke-linecap="round"/>
+  <path d="M490 315 C510 292 540 290 570 310" fill="none" stroke="#1a1d2c" stroke-width="10" stroke-linecap="round"/>
+  <path d="M445 365 C435 410 430 420 450 430" fill="none" stroke="#e7a99b" stroke-width="7" stroke-linecap="round"/>
+  <path d="M405 475 C435 505 470 505 500 475" fill="none" stroke="#8f3340" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="315" cy="430" r="24" fill="#ff9eb3" opacity=".45"/>
+  <circle cx="585" cy="430" r="24" fill="#ff9eb3" opacity=".45"/>
+  <path d="M350 655 L450 760 L550 655" fill="#252944" stroke="#151827" stroke-width="8"/>
+  <circle cx="450" cy="705" r="30" fill="#8f69ff" stroke="#fff" stroke-width="6"/>
+  <path d="M330 670 C390 720 510 720 570 670" fill="none" stroke="#30364e" stroke-width="8" stroke-linecap="round"/>
+</svg>`;
+
+function loadSampleCharacter(){
+  const dataUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(sampleSvg);
+  loadImageFromDataUrl(dataUrl, "LivePic_sample_character.svg", true);
+}
+
+
 function init(){
   fitCanvasToStage();
   fitObs();
   wireEvents();
   setNextBlink();
-  restoreFromLocal(false);
+  const restored = restoreFromLocal(false);
+  if(!restored){
+    loadSampleCharacter();
+  }
 
   if(new URLSearchParams(location.search).get("obs") === "1"){
     openObs(true);
@@ -66,6 +114,10 @@ function wireEvents(){
   fileInput.addEventListener("change", e=>{
     const file = e.target.files[0];
     if(file) loadFile(file);
+  });
+
+  document.getElementById("sampleBtn").addEventListener("click", ()=>{
+    loadSampleCharacter();
   });
 
   const stage = document.getElementById("stage");
@@ -341,12 +393,19 @@ function restoreFromLocal(showAlert){
     const raw = localStorage.getItem("livepic_v02_project");
     if(!raw){
       if(showAlert) alert("保存データがありません");
-      return;
+      return false;
     }
-    applySettingsObject(JSON.parse(raw));
+    const data = JSON.parse(raw);
+    if(!data || !data.imageDataUrl){
+      if(showAlert) alert("保存画像がありません");
+      return false;
+    }
+    applySettingsObject(data);
     if(showAlert) alert("復元しました");
+    return true;
   }catch(err){
     if(showAlert) alert("復元に失敗しました");
+    return false;
   }
 }
 async function copyObsHint(){
