@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v1.0</title>
+  <title>LivePic v2.0 Real Mesh Engine Alpha</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>IRIAM寄せ：体固定・頭部疑似レイヤー・顔トラッキング・誇張表情の全部入り実験版</p>
+    <p>本物の三角メッシュ変形エンジンα版。黒い口を乗せる方式ではなく、画像そのものを変形します。</p>
   </div>
   <div class="header-actions">
-    <button id="iriamPresetBtn" class="primary">IRIAM寄せプリセット</button>
-    <button id="openObsBtn">OBS表示</button>
-    <span class="pill">v1.0 Full Experiment</span>
+    <button id="presetBtn" class="primary">IRIAM寄せプリセット</button>
+    <button id="obsBtn">OBS表示</button>
+    <span class="pill">v2.0 Real Mesh</span>
   </div>
 </header>
 
@@ -30,10 +30,9 @@
     </label>
     <div class="row">
       <button id="sampleBtn">サンプル</button>
-      <button id="detectFaceBtn" class="primary">顔認識ポイント配置</button>
+      <button id="detectBtn" class="primary">画像顔認識</button>
     </div>
-    <div id="fileName" class="hint">透過PNG推奨。GitHub Pages上だと顔認識/カメラが安定。</div>
-    <div id="detectStatus" class="hint">顔認識待機中</div>
+    <div id="status" class="hint">GitHub Pages上で顔認識/カメラが安定します。</div>
 
     <h2>ポイント指定</h2>
     <div class="tool-grid">
@@ -46,13 +45,16 @@
       <button class="tool" data-point="body">体中心</button>
       <button class="tool" data-point="hair">髪中心</button>
     </div>
-    <button id="autoPointBtn">固定プリセット配置</button>
+    <div class="row">
+      <button id="autoPointsBtn">固定プリセット</button>
+      <button id="resetViewBtn">表示リセット</button>
+    </div>
     <p class="hint">ホイールでズーム、ドラッグで移動、クリックでポイント配置。</p>
 
     <h2>保存/復元</h2>
     <div class="row">
-      <button id="saveLocalBtn">保存</button>
-      <button id="loadLocalBtn">復元</button>
+      <button id="saveBtn">保存</button>
+      <button id="loadBtn">復元</button>
     </div>
     <div class="row">
       <button id="exportBtn">JSON</button>
@@ -63,23 +65,22 @@
 
   <section class="stage-card">
     <div class="stage-toolbar">
-      <button id="toggleMotionBtn">モーション ON</button>
-      <button id="cameraBtn" class="primary">顔トラッキング OFF</button>
-      <button id="micBtn">マイク口パク OFF</button>
-      <button id="resetPoseBtn">正面へ戻す</button>
+      <button id="motionBtn">モーション ON</button>
+      <button id="trackingBtn" class="primary">顔トラッキング OFF</button>
+      <button id="micBtn">マイク OFF</button>
+      <button id="guideBtn">ガイド ON</button>
     </div>
     <div class="stage-toolbar">
-      <button id="blinkBtn">まばたき</button>
-      <button id="talkBtn">口パク</button>
+      <button id="blinkBtn">瞬きテスト</button>
+      <button id="talkBtn">口パクテスト</button>
       <button id="autoYawBtn">顔向き自動 OFF</button>
-      <button id="debugBtn">ガイド ON</button>
+      <button id="centerBtn">正面へ戻す</button>
     </div>
 
     <div class="zoom-toolbar">
       <button id="zoomOutBtn">−</button>
       <input id="zoomRange" type="range" min="50" max="450" value="100">
       <button id="zoomInBtn">＋</button>
-      <button id="zoomResetBtn">戻す</button>
       <span id="zoomVal">100%</span>
     </div>
 
@@ -89,14 +90,14 @@
     </div>
 
     <div class="readout">
-      <span id="currentTool">選択中: 顔中心</span>
-      <span id="trackingStatus">Tracking: OFF</span>
-      <span id="fps">FPS: --</span>
+      <span id="toolReadout">選択中: 顔中心</span>
+      <span id="trackReadout">Tracking: OFF</span>
+      <span id="fpsReadout">FPS: --</span>
     </div>
 
     <div class="tracking-meter">
       <div><span>顔向き</span><b id="meterYaw">0%</b><i><em id="barYaw"></em></i></div>
-      <div><span>口開き</span><b id="meterMouth">0%</b><i><em id="barMouth"></em></i></div>
+      <div><span>口変形</span><b id="meterMouth">0%</b><i><em id="barMouth"></em></i></div>
       <div><span>瞬き</span><b id="meterBlink">0%</b><i><em id="barBlink"></em></i></div>
     </div>
 
@@ -104,59 +105,58 @@
   </section>
 
   <section class="panel">
-    <h2>IRIAM寄せ構造</h2>
-    <label>頭部疑似レイヤー <input id="headLayer" type="checkbox" checked></label>
-    <label>体固定 <input id="bodyFixed" type="checkbox" checked></label>
-    <label>顔マスク表示 <input id="faceMask" type="checkbox" checked></label>
-    <label>隙間カバー <input id="edgeCover" type="checkbox" checked></label>
-
-    <h2>頭・首・髪</h2>
-    <label>頭の動き <span id="headMoveVal"></span></label>
-    <input id="headMove" type="range" min="0" max="90" value="42">
+    <h2>本物メッシュ</h2>
+    <label>メッシュ変形 <input id="meshEnabled" type="checkbox" checked></label>
+    <label>メッシュ密度 <span id="meshDensityVal"></span></label>
+    <input id="meshDensity" type="range" min="14" max="60" value="34">
+    <label>変形範囲 <span id="faceRadiusVal"></span></label>
+    <input id="faceRadius" type="range" min="70" max="420" value="240">
     <label>顔向き増幅 <span id="yawBoostVal"></span></label>
-    <input id="yawBoost" type="range" min="0.5" max="4.0" step="0.1" value="2.4">
-    <label>頭の慣性 <span id="headLagVal"></span></label>
-    <input id="headLag" type="range" min="0.02" max="0.35" step="0.01" value="0.13">
-    <label>首の遅れ <span id="neckLagVal"></span></label>
-    <input id="neckLag" type="range" min="0" max="1" step="0.05" value="0.55">
+    <input id="yawBoost" type="range" min="0.5" max="4.5" step="0.1" value="2.5">
+    <label>顔向き手動 <span id="manualYawVal"></span></label>
+    <input id="manualYaw" type="range" min="-100" max="100" value="0">
+
+    <h2>IRIAM寄せ変形</h2>
+    <label>頭の移動 <span id="headShiftVal"></span></label>
+    <input id="headShift" type="range" min="0" max="90" value="42">
+    <label>顔の圧縮 <span id="faceSquashVal"></span></label>
+    <input id="faceSquash" type="range" min="0" max="0.45" step="0.01" value="0.19">
+    <label>顎の追従 <span id="chinFollowVal"></span></label>
+    <input id="chinFollow" type="range" min="0" max="70" value="34">
     <label>髪の遅れ <span id="hairLagVal"></span></label>
-    <input id="hairLag" type="range" min="0" max="1" step="0.05" value="0.75">
+    <input id="hairLag" type="range" min="0" max="1" step="0.05" value="0.72">
+    <label>首の遅れ <span id="neckLagVal"></span></label>
+    <input id="neckLag" type="range" min="0" max="1" step="0.05" value="0.54">
 
-    <h2>呼吸/重心</h2>
-    <label>胸呼吸 <span id="breathVal"></span></label>
-    <input id="breath" type="range" min="0" max="50" value="12">
-    <label>体ゆれ <span id="bodySwayVal"></span></label>
-    <input id="bodySway" type="range" min="0" max="20" value="3">
-    <label>頭ゆれ <span id="headIdleVal"></span></label>
-    <input id="headIdle" type="range" min="0" max="30" value="7">
-
-    <h2>口/目</h2>
+    <h2>口メッシュ</h2>
     <label>口感度 <span id="mouthSensitivityVal"></span></label>
-    <input id="mouthSensitivity" type="range" min="1" max="12" step="0.1" value="7.2">
-    <label>口の開き <span id="mouthAmountVal"></span></label>
-    <input id="mouthAmount" type="range" min="0" max="150" value="88">
-    <label>口の横幅 <span id="mouthWideVal"></span></label>
-    <input id="mouthWide" type="range" min="10" max="160" value="82">
-    <label>瞬き感度 <span id="blinkSensitivityVal"></span></label>
-    <input id="blinkSensitivity" type="range" min="1" max="12" step="0.1" value="6.2">
-    <label>瞬き強さ <span id="blinkAmountVal"></span></label>
-    <input id="blinkAmount" type="range" min="0" max="130" value="88">
-    <label>目線ゆらぎ <span id="eyeWanderVal"></span></label>
-    <input id="eyeWander" type="range" min="0" max="40" value="12">
+    <input id="mouthSensitivity" type="range" min="1" max="14" step="0.1" value="8.5">
+    <label>口開き強さ <span id="mouthOpenPowerVal"></span></label>
+    <input id="mouthOpenPower" type="range" min="0" max="160" value="105">
+    <label>口周辺範囲 <span id="mouthRadiusVal"></span></label>
+    <input id="mouthRadius" type="range" min="25" max="160" value="72">
+    <label>あご落ち <span id="jawDropVal"></span></label>
+    <input id="jawDrop" type="range" min="0" max="120" value="48">
 
-    <h2>顔変形</h2>
-    <label>顔圧縮 <span id="faceSquashVal"></span></label>
-    <input id="faceSquash" type="range" min="0" max="0.35" step="0.01" value="0.16">
-    <label>顔範囲 <span id="faceRadiusVal"></span></label>
-    <input id="faceRadius" type="range" min="80" max="450" value="245">
+    <h2>目メッシュ</h2>
+    <label>瞬き感度 <span id="blinkSensitivityVal"></span></label>
+    <input id="blinkSensitivity" type="range" min="1" max="14" step="0.1" value="7.0">
+    <label>瞬き強さ <span id="blinkPowerVal"></span></label>
+    <input id="blinkPower" type="range" min="0" max="100" value="68">
+    <label>目周辺範囲 <span id="eyeRadiusVal"></span></label>
+    <input id="eyeRadius" type="range" min="20" max="140" value="58">
+
+    <h2>呼吸/慣性</h2>
+    <label>胸呼吸 <span id="breathVal"></span></label>
+    <input id="breath" type="range" min="0" max="40" value="9">
     <label>反応速度 <span id="trackingSpeedVal"></span></label>
-    <input id="trackingSpeed" type="range" min="0.05" max="0.55" step="0.01" value="0.22">
+    <input id="trackingSpeed" type="range" min="0.05" max="0.55" step="0.01" value="0.24">
   </section>
 </main>
 
 <div id="obsOverlay" class="obs hidden">
   <canvas id="obsCanvas"></canvas>
-  <button id="closeObs">戻る</button>
+  <button id="closeObsBtn">戻る</button>
 </div>
 
 <script src="./app.js"></script>
