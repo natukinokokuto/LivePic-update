@@ -3,136 +3,125 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic - Working Alpha</title>
+  <title>LivePic v0.5</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <header class="app-header">
-    <div>
-      <h1>LivePic</h1>
-      <p>1枚絵を読み込んで、まばたき・口パク・ゆらぎで“配信っぽく動く”試作アプリ</p>
-    </div>
-    <div class="header-actions">
-      <button id="openObsBtn" class="primary">OBS表示</button>
-      <span class="pill">Working Alpha v0.2</span>
-    </div>
-  </header>
-
-  <main class="layout">
-    <section class="panel">
-      <h2>1. 画像読み込み</h2>
-      <label class="fileBox">
-        <input id="fileInput" type="file" accept="image/*" />
-        <span>画像を選択 / ドロップ</span>
-      </label>
-      <div id="fileName" class="hint">PNG推奨。透過PNGならOBS向き。</div>
-      <button id="sampleBtn" class="sampleBtn">サンプルキャラを表示</button>
-
-      <h2>2. ポイント指定</h2>
-      <div class="tool-grid">
-        <button class="tool active" data-point="face">顔中心</button>
-        <button class="tool" data-point="leftEye">左目</button>
-        <button class="tool" data-point="rightEye">右目</button>
-        <button class="tool" data-point="mouth">口</button>
-        <button class="tool" data-point="neck">首</button>
-        <button class="tool" data-point="body">体中心</button>
-      </div>
-      <p class="hint">プレビュー上をクリックすると、選択中のポイントを配置できます。</p>
-
-      <h2>3. プリセット</h2>
-      <div class="row">
-        <button id="autoPointBtn">ポイント自動配置</button>
-        <button id="resetMotionBtn">動き初期化</button>
-      </div>
-
-      <h2>4. 保存/復元</h2>
-      <div class="row">
-        <button id="saveLocalBtn">ブラウザ保存</button>
-        <button id="loadLocalBtn">保存を復元</button>
-      </div>
-      <div class="row">
-        <button id="exportBtn">JSON書き出し</button>
-        <button id="importBtn">JSON読込</button>
-      </div>
-      <textarea id="settingsBox" placeholder="JSON設定を書き出し/貼り付け"></textarea>
-    </section>
-
-    <section class="stage-card">
-      <div class="stage-toolbar">
-        <button id="toggleMotionBtn">モーション ON</button>
-        <button id="micBtn" class="primary">マイク口パク OFF</button>
-        <button id="blinkBtn">まばたき</button>
-        <button id="talkBtn">口パク</button>
-      </div>
-
-      <div class="zoom-toolbar">
-        <button id="zoomOutBtn">−</button>
-        <label>ズーム <span id="zoomVal">100%</span></label>
-        <input id="zoomRange" type="range" min="50" max="350" value="100" />
-        <button id="zoomInBtn">＋</button>
-        <button id="zoomResetBtn">リセット</button>
-        <button id="pointSizeBtn">ポイント大</button>
-      </div>
-
-      <div id="stage" class="stage">
-        <canvas id="canvas"></canvas>
-        <div id="dropMessage">
-          <strong>画像を読み込んでください</strong>
-          <span>読み込むだけでも自動ポイントで動きます</span>
-        </div>
-      </div>
-
-      <div class="readout">
-        <span id="currentTool">選択中: 顔中心</span>
-        <span>ドラッグ: 表示移動 / ホイール: ズーム</span>
-        <span id="micStatus">Mic: OFF</span>
-        <span id="fps">FPS: --</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>動き調整</h2>
-
-      <label>呼吸・上下揺れ <span id="breathVal">16</span></label>
-      <input id="breath" type="range" min="0" max="60" value="16" />
-
-      <label>左右ゆらぎ <span id="swayVal">10</span></label>
-      <input id="sway" type="range" min="0" max="50" value="10" />
-
-      <label>顔の傾き <span id="tiltVal">6</span></label>
-      <input id="tilt" type="range" min="0" max="22" value="6" />
-
-      <label>口パク量 <span id="mouthVal">24</span></label>
-      <input id="mouthAmount" type="range" min="0" max="70" value="24" />
-
-      <label>まばたき潰し <span id="blinkVal">16</span></label>
-      <input id="blinkAmount" type="range" min="0" max="45" value="16" />
-
-      <label>自動まばたき間隔 <span id="blinkIntervalVal">4.5秒</span></label>
-      <input id="blinkInterval" type="range" min="2" max="9" step="0.5" value="4.5" />
-
-      <label>マイク感度 <span id="micGainVal">3.0</span></label>
-      <input id="micGain" type="range" min="0.5" max="8" step="0.1" value="3.0" />
-
-      <h2>キーボード操作</h2>
-      <div class="key-help">
-        <span>A/D：顔傾き</span>
-        <span>W/S：上下移動</span>
-        <span>Space：口パク</span>
-        <span>B：まばたき</span>
-      </div>
-
-      <h2>OBS用</h2>
-      <p class="hint">GitHub Pages化したら、OBSのブラウザソースには通常ページを開いて「OBS表示」を押すか、URL末尾に <code>?obs=1</code> を付けてください。</p>
-      <button id="copyObsHintBtn">OBS用URLヒントをコピー</button>
-    </section>
-  </main>
-
-  <div id="obsOverlay" class="obs hidden">
-    <canvas id="obsCanvas"></canvas>
-    <button id="closeObs">編集へ戻る</button>
+<header class="app-header">
+  <div>
+    <h1>LivePic</h1>
+    <p>1枚絵を読み込んで、ズーム編集・口パク・まばたき・簡易メッシュ変形を試すα版</p>
   </div>
+  <div class="header-actions">
+    <button id="openObsBtn" class="primary">OBS表示</button>
+    <span class="pill">v0.5 Mesh Alpha</span>
+  </div>
+</header>
 
-  <script src="./app.js"></script>
+<main class="layout">
+  <section class="panel">
+    <h2>画像</h2>
+    <label class="fileBox">
+      <input id="fileInput" type="file" accept="image/*">
+      <span>画像を選択</span>
+    </label>
+    <button id="sampleBtn">サンプルキャラ表示</button>
+    <div id="fileName" class="hint">最初はサンプルが出ます。透過PNG推奨。</div>
+
+    <h2>ポイント指定</h2>
+    <div class="tool-grid">
+      <button class="tool active" data-point="face">顔中心</button>
+      <button class="tool" data-point="leftEye">左目</button>
+      <button class="tool" data-point="rightEye">右目</button>
+      <button class="tool" data-point="mouth">口</button>
+      <button class="tool" data-point="chin">あご</button>
+      <button class="tool" data-point="neck">首</button>
+      <button class="tool" data-point="body">体中心</button>
+      <button class="tool" data-point="hair">髪揺れ中心</button>
+    </div>
+    <p class="hint">ズームしてからポイント配置できます。ドラッグで表示移動。</p>
+    <button id="autoPointBtn">ポイント自動配置</button>
+
+    <h2>保存/復元</h2>
+    <div class="row">
+      <button id="saveLocalBtn">保存</button>
+      <button id="loadLocalBtn">復元</button>
+    </div>
+    <div class="row">
+      <button id="exportBtn">JSON</button>
+      <button id="importBtn">読込</button>
+    </div>
+    <textarea id="settingsBox" placeholder="設定JSON"></textarea>
+  </section>
+
+  <section class="stage-card">
+    <div class="stage-toolbar">
+      <button id="toggleMotionBtn">モーション ON</button>
+      <button id="micBtn" class="primary">マイク OFF</button>
+      <button id="blinkBtn">まばたき</button>
+      <button id="talkBtn">口パク</button>
+    </div>
+
+    <div class="zoom-toolbar">
+      <button id="zoomOutBtn">−</button>
+      <input id="zoomRange" type="range" min="50" max="400" value="100">
+      <button id="zoomInBtn">＋</button>
+      <button id="zoomResetBtn">ズーム戻す</button>
+      <span id="zoomVal">100%</span>
+    </div>
+
+    <div id="stage" class="stage">
+      <canvas id="canvas"></canvas>
+      <div id="dropMessage">画像を読み込んでください</div>
+    </div>
+
+    <div class="readout">
+      <span id="currentTool">選択中: 顔中心</span>
+      <span>ホイール: ズーム / ドラッグ: 移動</span>
+      <span id="fps">FPS: --</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>基本モーション</h2>
+    <label>呼吸 <span id="breathVal">16</span></label>
+    <input id="breath" type="range" min="0" max="60" value="16">
+    <label>左右ゆらぎ <span id="swayVal">10</span></label>
+    <input id="sway" type="range" min="0" max="50" value="10">
+    <label>傾き <span id="tiltVal">6</span></label>
+    <input id="tilt" type="range" min="0" max="22" value="6">
+    <label>口パク量 <span id="mouthAmountVal">24</span></label>
+    <input id="mouthAmount" type="range" min="0" max="75" value="24">
+    <label>まばたき量 <span id="blinkAmountVal">16</span></label>
+    <input id="blinkAmount" type="range" min="0" max="50" value="16">
+    <label>マイク感度 <span id="micGainVal">3.0</span></label>
+    <input id="micGain" type="range" min="0.5" max="8" step="0.1" value="3.0">
+
+    <h2>メッシュ変形</h2>
+    <label>メッシュON <input id="meshEnabled" type="checkbox" checked></label>
+    <label>顔向き <span id="yawVal">0</span></label>
+    <input id="yaw" type="range" min="-100" max="100" value="0">
+    <label>変形強さ <span id="meshPowerVal">32</span></label>
+    <input id="meshPower" type="range" min="0" max="80" value="32">
+    <label>顔範囲 <span id="faceRadiusVal">210</span></label>
+    <input id="faceRadius" type="range" min="80" max="360" value="210">
+    <button id="autoYawBtn">顔向き自動テスト OFF</button>
+
+    <h2>操作</h2>
+    <div class="key-help">
+      <span>A/D: 顔向き</span>
+      <span>W/S: 上下</span>
+      <span>Space: 口パク</span>
+      <span>B: まばたき</span>
+    </div>
+  </section>
+</main>
+
+<div id="obsOverlay" class="obs hidden">
+  <canvas id="obsCanvas"></canvas>
+  <button id="closeObs">戻る</button>
+</div>
+
+<script src="./app.js"></script>
 </body>
 </html>
