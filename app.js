@@ -477,10 +477,64 @@ function smoothContour(points,passes){
   return pts;
 }
 
+
+
+function hasUsefulAlpha(canvas){
+  const g=canvas.getContext('2d',{willReadFrequently:true});
+  const d=g.getImageData(0,0,canvas.width,canvas.height).data;
+  let transparent=0, semi=0, opaque=0;
+  for(let i=3;i<d.length;i+=4){
+    const a=d[i];
+    if(a<8)transparent++; else if(a<248)semi++; else opaque++;
+  }
+  const total=transparent+semi+opaque;
+  return {transparent,semi,opaque,total,hasAlpha:(transparent+semi)>total*.01};
+}
+function outerPinKeys(){
+  return ['contourTop','contourUpperR','contourMidR','contourLowerR','shoulderR','bodyR','bodyBottom','bodyL','shoulderL','contourLowerL','contourMidL','contourUpperL'];
+}
+function outerPinPolygonPixels(w,h){
+  const pts=outerPinKeys().map(k=>projectState.points?.[k]).filter(Boolean);
+  if(pts.length<3)return null;
+  return pts.map(pt=>({x:pt.x*w,y:pt.y*h}));
+}
+function createCharacterMaskFromPins(w,h){
+  const c=createMask(w,h),g=c.getContext('2d');
+  const poly=outerPinPolygonPixels(w,h);
+  if(!poly){g.fillStyle='#fff';g.fillRect(0,0,w,h);return c;}
+  g.fillStyle='#fff';
+  g.beginPath();
+  poly.forEach((pt,i)=>i?g.lineTo(pt.x,pt.y):g.moveTo(pt.x,pt.y));
+  g.closePath();
+  g.fill();
+  return c;
+}
+function refreshCharacterSource(){
+  if(!projectState.original)return null;
+  const src=toCanvas(projectState.original);
+  const stats=hasUsefulAlpha(src);
+  const w=src.width,h=src.height;
+  const pinMask=createCharacterMaskFromPins(w,h);
+  const out=createMask(w,h),g=out.getContext('2d');
+  g.drawImage(src,0,0);
+  // 透過PNGなら元のalphaを尊重しつつ外周ピンの外側も切る。
+  // 背景付きPNG/JPGなら外周ピンをキャラマスクとして使い、四角背景を描画対象から外す。
+  g.globalCompositeOperation='destination-in';
+  g.drawImage(pinMask,0,0);
+  g.globalCompositeOperation='source-over';
+  projectState.alphaStats=stats;
+  projectState.characterMask=pinMask;
+  projectState.maskedOriginal=out;
+  return out;
+}
+function getRenderSource(){
+  return projectState.maskedOriginal || refreshCharacterSource() || projectState.original;
+}
+
 function generateParts(){
   if(!projectState.original)return;
   traceContours();
-  const img=projectState.original,w=img.width,h=img.height,src=toCanvas(img);
+  const img=projectState.original,w=img.width,h=img.height,src=refreshCharacterSource()||toCanvas(img);
   const masks={};
   masks.face=createMask(w,h);drawEllipseMask(masks.face,projectState.points.face.x*w,(projectState.points.face.y+.05)*h,.22*w,.25*h);
   masks.hair=createMask(w,h);drawEllipseMask(masks.hair,projectState.points.hair.x*w,(projectState.points.hair.y+.10)*h,.30*w,.24*h);
@@ -561,7 +615,7 @@ function drawAvatar(g,w,h,editor=false,mode="live"){
   if(!projectState.original)return;
   const r=imageRect(w,h,editor);
   const parts=projectState.parts;
-  if(mode==="original"||!parts.base_inpainted){g.drawImage(projectState.original,r.x,r.y,r.w,r.h);}
+  if(mode==="original"){g.drawImage(projectState.original,r.x,r.y,r.w,r.h);} else if(!parts.base_inpainted){g.drawImage(getRenderSource(),r.x,r.y,r.w,r.h);}
   else if(mode==="inpaint"){g.drawImage(projectState.inpainted,r.x,r.y,r.w,r.h);}
   else if(mode==="parts"){drawPartsGrid(g,w,h);}
   else{
@@ -779,6 +833,7 @@ function nearestStructureDistance(x,y,structures){
 }
 
 function generateMesh(showStatus=true){
+  refreshCharacterSource();
   const p=projectState.points||{};
   const vertices=[];
   const triangles=[];
@@ -895,11 +950,11 @@ function generateMesh(showStatus=true){
   ].forEach(e=>edgeByPin(e[0],e[1],e[2]));
 
   projectState.mesh={
-    version:'v48-pin-line-local-dense-mesh',
+    version:'v49_png_mask_pin_local_mesh',
     vertices,triangles,edges,structures,
-    notes:'全面格子を廃止。外周ピン内側、目/口ループ、上下線、髪チェーンの周辺だけに細密メッシュを生成。ピンを認識そのものとして扱う。'
+    notes:'PNG/背景付き画像を外周ピンでキャラマスク化。四角背景を描画対象から外し、外周ピン内側と部位ピン線だけにメッシュ生成。'
   };
-  if(showStatus)setStatus('cutStatus',`v48局所メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length}`);
+  if(showStatus)setStatus('cutStatus',`v49 PNGマスク＋局所メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length}`);
   updateProjectReadout();
 }
 
@@ -1029,7 +1084,7 @@ function warpedVertex(v,r){
 }
 
 function drawMeshAvatar(g,r){
-  const img=projectState.original;
+  const img=getRenderSource();
   const mesh=projectState.mesh;
   if(!img)return;
   if(!mesh||!mesh.triangles||!mesh.triangles.length){g.drawImage(img,r.x,r.y,r.w,r.h);return;}
