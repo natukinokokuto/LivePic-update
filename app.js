@@ -12,16 +12,18 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
+  tool:"face",motion:true,obs:false,autoYaw:false,debug:true,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    breath:16,sway:10,tilt:6,micGain:3.0,
-    yaw:0,meshPower:48,faceRadius:230,meshDensity:54,meshEnabled:true,
-    mouthAmount:58,mouthWide:58,blinkAmount:52,eyeWander:8,
-    mouthSensitivity:5.5,blinkSensitivity:4.8,yawBoost:1.8,trackingSpeed:0.18,inertia:0.35
+    headLayer:true,bodyFixed:true,faceMask:true,edgeCover:true,
+    headMove:42,yawBoost:2.4,headLag:0.13,neckLag:0.55,hairLag:0.75,
+    breath:12,bodySway:3,headIdle:7,
+    mouthSensitivity:7.2,mouthAmount:88,mouthWide:82,
+    blinkSensitivity:6.2,blinkAmount:88,eyeWander:12,
+    faceSquash:0.16,faceRadius:245,trackingSpeed:0.22
   },
-  track:{yaw:0,mouth:0,blink:0,rawYaw:0,rawMouth:0,rawBlink:0,hasFace:false},
-  smooth:{yaw:0,mouth:0,blink:0,eyeX:0,eyeY:0},
+  track:{yaw:0,mouth:0,blink:0,hasFace:false},
+  smooth:{yaw:0,mouth:0,blink:0,eyeX:0,eyeY:0,headX:0,headY:0,neckX:0,hairX:0,bodyBreath:0},
   manual:{talking:0,blinkBoost:0,yawKey:0,y:0},
   view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,dragMoved:false},
   mic:{enabled:false,stream:null,audioCtx:null,analyser:null,data:null,level:0},
@@ -60,17 +62,18 @@ function wire(){
   document.getElementById("fileInput").addEventListener("change",e=>{const f=e.target.files[0];if(f)loadFile(f);});
   document.getElementById("sampleBtn").onclick=loadSample;
   document.getElementById("detectFaceBtn").onclick=detectFaceFromImage;
+  document.getElementById("iriamPresetBtn").onclick=applyIriamPreset;
   document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
   document.getElementById("autoPointBtn").onclick=autoPoints;
   document.getElementById("toggleMotionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("toggleMotionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
-  document.getElementById("micBtn").onclick=toggleMic;
   document.getElementById("cameraBtn").onclick=toggleCameraTracking;
+  document.getElementById("micBtn").onclick=toggleMic;
   document.getElementById("blinkBtn").onclick=()=>triggerBlink(true);
-  document.getElementById("talkBtn").onclick=()=>state.manual.talking=1;
+  document.getElementById("talkBtn").onclick=()=>state.manual.talking=1.2;
   document.getElementById("autoYawBtn").onclick=()=>{state.autoYaw=!state.autoYaw;document.getElementById("autoYawBtn").textContent=state.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";};
-  document.getElementById("resetFaceBtn").onclick=()=>{state.controls.yaw=0;state.track.yaw=0;state.smooth.yaw=0;updateLabels();};
+  document.getElementById("debugBtn").onclick=()=>{state.debug=!state.debug;document.getElementById("debugBtn").textContent=state.debug?"ガイド ON":"ガイド OFF";};
+  document.getElementById("resetPoseBtn").onclick=()=>{state.track.yaw=0;state.smooth.yaw=0;state.manual.yawKey=0;};
   document.getElementById("openObsBtn").onclick=()=>openObs(false);
-  document.getElementById("openObsBtn2").onclick=()=>openObs(false);
   document.getElementById("closeObs").onclick=closeObs;
   document.getElementById("saveLocalBtn").onclick=()=>{saveLocal();alert("保存しました");};
   document.getElementById("loadLocalBtn").onclick=()=>restoreLocal(true);
@@ -95,7 +98,7 @@ function wire(){
   });
   window.addEventListener("mouseup",()=>state.view.dragging=false);
   canvas.addEventListener("click",e=>{if(state.view.dragMoved){state.view.dragMoved=false;return;}placePoint(e);});
-  canvas.addEventListener("wheel",e=>{e.preventDefault();zoomAt(e.deltaY<0?1.12:0.88);},{passive:false});
+  canvas.addEventListener("wheel",e=>{e.preventDefault();state.view.zoom=clamp(state.view.zoom*(e.deltaY<0?1.12:.88),.5,4.5);updateZoomUi();},{passive:false});
   document.getElementById("zoomRange").addEventListener("input",e=>{state.view.zoom=Number(e.target.value)/100;updateZoomUi();});
   document.getElementById("zoomInBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom*1.2,.5,4.5);updateZoomUi();};
   document.getElementById("zoomOutBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom/1.2,.5,4.5);updateZoomUi();};
@@ -107,13 +110,26 @@ function wire(){
     if(e.code==="KeyD")state.manual.yawKey=1;
     if(e.code==="KeyW")state.manual.y=-1;
     if(e.code==="KeyS")state.manual.y=1;
-    if(e.code==="Space"){e.preventDefault();state.manual.talking=1;}
+    if(e.code==="Space"){e.preventDefault();state.manual.talking=1.2;}
     if(e.code==="KeyB")triggerBlink(true);
   });
   window.addEventListener("keyup",e=>{
     if(["KeyA","KeyD"].includes(e.code))state.manual.yawKey=0;
     if(["KeyW","KeyS"].includes(e.code))state.manual.y=0;
   });
+}
+
+function applyIriamPreset(){
+  Object.assign(state.controls,{
+    headLayer:true,bodyFixed:true,faceMask:true,edgeCover:true,
+    headMove:42,yawBoost:2.4,headLag:0.13,neckLag:0.55,hairLag:0.75,
+    breath:12,bodySway:3,headIdle:7,
+    mouthSensitivity:7.2,mouthAmount:88,mouthWide:82,
+    blinkSensitivity:6.2,blinkAmount:88,eyeWander:12,
+    faceSquash:0.16,faceRadius:245,trackingSpeed:0.22
+  });
+  updateLabels();
+  alert("IRIAM寄せプリセットを適用しました");
 }
 
 function selectTool(b){
@@ -128,119 +144,79 @@ function autoPoints(){state.points={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rig
 
 async function getFaceMesh(){
   if(state.faceMesh)return state.faceMesh;
-  if(typeof FaceMesh === "undefined"){
-    throw new Error("MediaPipeが読み込めません。ネット接続かGitHub Pages公開後に試してください。");
-  }
-  const fm=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+  if(typeof FaceMesh==="undefined")throw new Error("MediaPipe未読込。GitHub Pagesで試してください。");
+  const fm=new FaceMesh({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
   fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
   state.faceMesh=fm;
   return fm;
 }
-
 async function detectFaceFromImage(){
   const status=document.getElementById("detectStatus");
   try{
     if(!state.image)throw new Error("先に画像を読み込んでください");
     status.textContent="顔認識中...";
     const fm=await getFaceMesh();
-    const oldHandler=fm.onResults;
     const result=await new Promise(async(resolve,reject)=>{
       let done=false;
-      fm.onResults((res)=>{if(done)return;done=true;resolve(res);});
+      fm.onResults(res=>{if(done)return;done=true;resolve(res);});
       const temp=document.createElement("canvas");
       temp.width=state.image.naturalWidth||state.image.width;
       temp.height=state.image.naturalHeight||state.image.height;
-      const tg=temp.getContext("2d");
-      tg.drawImage(state.image,0,0,temp.width,temp.height);
+      temp.getContext("2d").drawImage(state.image,0,0,temp.width,temp.height);
       try{await fm.send({image:temp});}catch(e){reject(e);}
       setTimeout(()=>{if(!done)reject(new Error("顔を検出できませんでした"));},3500);
     });
-    if(!result.multiFaceLandmarks || !result.multiFaceLandmarks[0])throw new Error("顔を検出できませんでした");
+    if(!result.multiFaceLandmarks||!result.multiFaceLandmarks[0])throw new Error("顔を検出できませんでした");
     applyLandmarksToImagePoints(result.multiFaceLandmarks[0]);
-    status.textContent="顔認識OK。ポイントを自動配置しました。";
+    status.textContent="顔認識OK。ポイント自動配置済み。";
     saveLocal();
-  }catch(e){
-    status.textContent="顔認識失敗: "+e.message;
-  }
+  }catch(e){status.textContent="顔認識失敗: "+e.message;}
 }
-
 function applyLandmarksToImagePoints(lm){
-  const avg=(ids)=>({x:ids.reduce((a,i)=>a+lm[i].x,0)/ids.length,y:ids.reduce((a,i)=>a+lm[i].y,0)/ids.length});
-  const leftEye=avg([33,133,159,145]);
-  const rightEye=avg([263,362,386,374]);
-  const mouth=avg([13,14,78,308]);
-  const chin=lm[152] || {x:.5,y:.55};
-  const nose=lm[1] || avg([leftEye,rightEye,mouth]);
-  const forehead=lm[10] || {x:nose.x,y:nose.y-.18};
-  state.points.leftEye=leftEye;
-  state.points.rightEye=rightEye;
-  state.points.mouth=mouth;
-  state.points.chin={x:chin.x,y:chin.y};
+  const avg=ids=>({x:ids.reduce((a,i)=>a+lm[i].x,0)/ids.length,y:ids.reduce((a,i)=>a+lm[i].y,0)/ids.length});
+  const leftEye=avg([33,133,159,145]),rightEye=avg([263,362,386,374]),mouth=avg([13,14,78,308]);
+  const chin=lm[152]||{x:.5,y:.55},nose=lm[1]||{x:.5,y:.35},forehead=lm[10]||{x:nose.x,y:nose.y-.18};
+  state.points.leftEye=leftEye;state.points.rightEye=rightEye;state.points.mouth=mouth;state.points.chin={x:chin.x,y:chin.y};
   state.points.face={x:nose.x,y:(leftEye.y+rightEye.y+mouth.y)/3};
-  state.points.neck={x:chin.x,y:clamp(chin.y+.07,0,1)};
-  state.points.body={x:chin.x,y:clamp(chin.y+.23,0,1)};
+  state.points.neck={x:chin.x,y:clamp(chin.y+.07,0,1)};state.points.body={x:chin.x,y:clamp(chin.y+.23,0,1)};
   state.points.hair={x:forehead.x,y:clamp(forehead.y-.04,0,1)};
 }
 
 async function toggleCameraTracking(){
-  if(state.cameraOn){
-    stopCameraTracking();
-    return;
-  }
+  if(state.cameraOn){stopCameraTracking();return;}
   try{
     const fm=await getFaceMesh();
     fm.onResults(onCameraResults);
-    state.camera=new Camera(video,{
-      onFrame:async()=>{await fm.send({image:video});},
-      width:640,height:480
-    });
+    state.camera=new Camera(video,{onFrame:async()=>{await fm.send({image:video});},width:640,height:480});
     await state.camera.start();
     state.cameraOn=true;
-    document.getElementById("cameraBtn").textContent="カメラ表情 ON";
+    document.getElementById("cameraBtn").textContent="顔トラッキング ON";
     document.getElementById("trackingStatus").textContent="Tracking: 起動中";
-  }catch(e){
-    alert("カメラ表情を開始できません: "+e.message);
-  }
+  }catch(e){alert("顔トラッキング開始失敗: "+e.message);}
 }
 function stopCameraTracking(){
   state.cameraOn=false;
-  if(state.camera && state.camera.stop)state.camera.stop();
+  if(state.camera&&state.camera.stop)state.camera.stop();
   if(video.srcObject)video.srcObject.getTracks().forEach(t=>t.stop());
-  document.getElementById("cameraBtn").textContent="カメラ表情 OFF";
+  document.getElementById("cameraBtn").textContent="顔トラッキング OFF";
   document.getElementById("trackingStatus").textContent="Tracking: OFF";
 }
 function onCameraResults(res){
-  if(!res.multiFaceLandmarks || !res.multiFaceLandmarks[0]){
-    state.track.hasFace=false;
-    document.getElementById("trackingStatus").textContent="Tracking: 顔なし";
-    return;
+  if(!res.multiFaceLandmarks||!res.multiFaceLandmarks[0]){
+    state.track.hasFace=false;document.getElementById("trackingStatus").textContent="Tracking: 顔なし";return;
   }
   const lm=res.multiFaceLandmarks[0];
   const dist=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y);
-  const eyeW=(dist(33,133)+dist(263,362))/2;
   const leftEyeOpen=dist(159,145)/(dist(33,133)+.0001);
   const rightEyeOpen=dist(386,374)/(dist(263,362)+.0001);
   const eyeOpen=(leftEyeOpen+rightEyeOpen)/2;
-
-  const mouthW=dist(78,308);
-  const mouthOpen=dist(13,14);
-  const mouthRatio=mouthOpen/(mouthW+.0001);
-
-  const nose=lm[1], left=lm[234], right=lm[454];
-  const centerX=(left.x+right.x)/2;
-  const faceW=Math.abs(right.x-left.x)+.0001;
+  const mouthRatio=dist(13,14)/(dist(78,308)+.0001);
+  const nose=lm[1],left=lm[234],right=lm[454];
+  const centerX=(left.x+right.x)/2,faceW=Math.abs(right.x-left.x)+.0001;
   const rawYaw=(nose.x-centerX)/faceW;
-
-  const yaw=clamp(rawYaw*5.2*state.controls.yawBoost,-1,1);
-  const mouth=clamp((mouthRatio-.045)*state.controls.mouthSensitivity,0,1);
-  const blink=clamp((.185-eyeOpen)*state.controls.blinkSensitivity,0,1);
-
-  state.track.rawYaw=rawYaw;
-  state.track.rawMouth=mouthRatio;
-  state.track.rawBlink=eyeOpen;
-  state.track.yaw=yaw;
-  state.track.mouth=mouth;
-  state.track.blink=blink;
+  state.track.yaw=clamp(rawYaw*5.2*state.controls.yawBoost,-1,1);
+  state.track.mouth=clamp((mouthRatio-.045)*state.controls.mouthSensitivity,0,1);
+  state.track.blink=clamp((.185-eyeOpen)*state.controls.blinkSensitivity,0,1);
   state.track.hasFace=true;
   document.getElementById("trackingStatus").textContent="Tracking: ON / 顔あり";
 }
@@ -249,122 +225,207 @@ function fitCanvas(){const r=document.getElementById("stage").getBoundingClientR
 function fitObs(){const d=devicePixelRatio||1;obsCanvas.width=Math.floor(innerWidth*d);obsCanvas.height=Math.floor(innerHeight*d);obsCtx.setTransform(d,0,0,d,0,0);}
 function baseRect(w,h){if(!state.image)return{x:0,y:0,w:0,h:0};const s=Math.min(w/state.image.width,h/state.image.height)*.92;return{x:(w-state.image.width*s)/2,y:(h-state.image.height*s)/2,w:state.image.width*s,h:state.image.height*s};}
 function imageRect(w,h,editor){const r=baseRect(w,h);if(!editor)return r;const cx=w/2,cy=h/2;return{x:cx+(r.x-cx)*state.view.zoom+state.view.panX,y:cy+(r.y-cy)*state.view.zoom+state.view.panY,w:r.w*state.view.zoom,h:r.h*state.view.zoom};}
-function zoomAt(f){state.view.zoom=clamp(state.view.zoom*f,.5,4.5);updateZoomUi();}
 function updateZoomUi(){document.getElementById("zoomVal").textContent=Math.round(state.view.zoom*100)+"%";document.getElementById("zoomRange").value=Math.round(state.view.zoom*100);}
 function placePoint(e){if(!state.image)return;const d=canvas.getBoundingClientRect(),r=imageRect(d.width,d.height,true);state.points[state.tool]={x:clamp((e.clientX-d.left-r.x)/r.w,0,1),y:clamp((e.clientY-d.top-r.y)/r.h,0,1)};}
 
 function draw(g,w,h,editor){
   g.clearRect(0,0,w,h);
   if(!state.image)return;
-  const c=state.controls,r=imageRect(w,h,editor),m=state.motion?1:0;
+  const r=imageRect(w,h,editor),c=state.controls,m=state.motion?1:0;
+  const p=getPixelPoints(r);
   const breath=Math.sin(state.t*.035)*c.breath*m;
-  const sway=Math.sin(state.t*.022)*c.sway*m;
-  const tilt=Math.sin(state.t*.018)*c.tilt*.28*m;
-  const yManual=state.manual.y*18*m;
+  const bodySway=Math.sin(state.t*.018)*c.bodySway*m;
 
+  // body/base: fixed, but chest breathing uses tiny scale around body center instead of flying up.
   g.save();
-  g.translate(w/2+sway,h/2+breath+yManual);
-  g.rotate(tilt*Math.PI/180);
-  g.translate(-w/2,-h/2);
-
-  if(c.meshEnabled)drawSmoothDeform(g,r);
-  else g.drawImage(state.image,r.x,r.y,r.w,r.h);
-
-  drawFaceOverlays(g,r);
+  if(!c.bodyFixed){
+    g.translate(bodySway, breath*.12);
+  }
+  const bodyCx=p.body.x, bodyCy=p.body.y;
+  const chestScale=1+(breath*.0016);
+  g.translate(bodyCx,bodyCy);
+  g.scale(1+Math.abs(chestScale-1)*.25,chestScale);
+  g.translate(-bodyCx,-bodyCy);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
   g.restore();
 
+  if(c.headLayer){
+    drawHeadLayer(g,r,p);
+  }else{
+    drawLegacyFace(g,r,p);
+  }
+
+  drawExpressions(g,r,p);
+  if(state.debug&&editor)drawGuides(g,r,p);
   if(editor)drawPoints(g,r);
 }
 
-function drawSmoothDeform(g,r){
-  const img=state.image,c=state.controls;
-  const strips=Math.max(18,Math.min(90,Math.floor(c.meshDensity)));
-  const face=state.points.face||{x:.5,y:.32},chin=state.points.chin||{x:.5,y:.49},hair=state.points.hair||{x:.5,y:.20};
-  const fx=r.x+face.x*r.w;
-  const cr=c.faceRadius*(r.w/900);
+function getPixelPoints(r){
+  const def={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};
+  const out={};
+  for(const k of Object.keys(def)){
+    const q=state.points[k]||def[k];
+    out[k]={x:r.x+q.x*r.w,y:r.y+q.y*r.h,nx:q.x,ny:q.y};
+  }
+  return out;
+}
+
+function drawHeadLayer(g,r,p){
+  const c=state.controls;
   const yaw=state.smooth.yaw;
-  const sw=img.width/strips;
-  for(let i=0;i<strips;i++){
-    const sx=i*sw;
-    const nx=(i+.5)/strips;
-    const x=r.x+nx*r.w;
-    const dx=x-fx;
-    const side=dx/cr;
-    const distX=Math.abs(dx)/cr;
-    let faceInf=clamp(1-distX,0,1);
-    faceInf=faceInf*faceInf;
-    const power=c.meshPower*yaw;
-    const cheek=power*faceInf*(1-Math.abs(side)*.24);
-    const perspective=1-Math.abs(yaw)*0.045*faceInf;
-    const destX=r.x+(sx/img.width)*r.w + cheek*.42;
-    const destW=(r.w/strips+1.4)*perspective;
-    g.drawImage(img,sx,0,sw,img.height,destX,r.y,destW,r.h);
+  const headR=c.faceRadius*(r.w/900);
+  const faceW=headR*1.25, faceH=headR*1.58;
+  const cx=p.face.x, cy=p.face.y+headR*.10;
+  const moveX=state.smooth.headX;
+  const moveY=state.smooth.headY;
+  const neckX=state.smooth.neckX;
+  const hairX=state.smooth.hairX;
+
+  // cover old head area a bit with enlarged blurred-like redraw to reduce black gaps.
+  if(c.edgeCover){
+    g.save();
+    g.globalAlpha=.52;
+    g.translate(cx+moveX*.28,cy+moveY*.15);
+    g.scale(1.05,1.04);
+    g.translate(-(cx),-(cy));
+    clipEllipse(g,cx,cy,faceW*1.08,faceH*1.08);
+    g.drawImage(state.image,r.x,r.y,r.w,r.h);
+    g.restore();
+  }
+
+  // neck delayed patch
+  g.save();
+  g.globalAlpha=.78;
+  const neckR=headR*.52;
+  clipEllipse(g,p.neck.x+neckX*.35,p.neck.y,neckR*.70,neckR*.62);
+  g.translate(neckX*.25,0);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  // head masked layer: pseudo separate head with yaw squash/shift
+  g.save();
+  const squash=1-Math.abs(yaw)*c.faceSquash;
+  const stretch=1+Math.abs(yaw)*c.faceSquash*.28;
+  const roll=yaw*.035;
+  clipEllipse(g,cx+moveX,cy+moveY,faceW,faceH);
+  g.translate(cx+moveX,cy+moveY);
+  g.rotate(roll);
+  g.scale(squash,stretch);
+  g.translate(-(cx),-(cy));
+  // opposite side reveal / cheek shift
+  g.translate(yaw*c.headMove*(r.w/900)*.35,0);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  // hair delayed layer at top, gives IRIAM-ish lag
+  g.save();
+  g.globalAlpha=.55;
+  const hairR=headR*.95;
+  clipEllipse(g,p.hair.x+hairX*.38,p.hair.y+headR*.38,hairR*1.05,hairR*.95);
+  g.translate(hairX*.45,state.smooth.headY*.25);
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  // cheek shadow/highlight for fake 3D
+  if(Math.abs(yaw)>.05){
+    g.save();
+    clipEllipse(g,cx+moveX,cy+moveY,faceW,faceH);
+    const grad=g.createLinearGradient(cx-faceW,cy,cx+faceW,cy);
+    if(yaw>0){
+      grad.addColorStop(0,"rgba(0,0,0,.20)");
+      grad.addColorStop(.55,"rgba(255,255,255,.04)");
+      grad.addColorStop(1,"rgba(255,255,255,.16)");
+    }else{
+      grad.addColorStop(0,"rgba(255,255,255,.16)");
+      grad.addColorStop(.45,"rgba(255,255,255,.04)");
+      grad.addColorStop(1,"rgba(0,0,0,.20)");
+    }
+    g.fillStyle=grad;
+    g.fillRect(cx-faceW,cy-faceH,faceW*2,faceH*2);
+    g.restore();
   }
 }
 
-function drawFaceOverlays(g,r){
+function drawLegacyFace(g,r,p){
+  // fallback: just redraw image
+  g.drawImage(state.image,r.x,r.y,r.w,r.h);
+}
+
+function drawExpressions(g,r,p){
   const c=state.controls;
-  const mouth=state.points.mouth;
+  const yaw=state.smooth.yaw;
+  const faceScale=r.w/900;
+  const headX=state.smooth.headX, headY=state.smooth.headY;
+  const exprX=headX+yaw*c.headMove*faceScale*.22;
+  const exprY=headY;
+
   const mouthOpen=state.smooth.mouth;
-  if(mouth&&mouthOpen>.01){
-    const x=r.x+mouth.x*r.w,y=r.y+mouth.y*r.h;
+  if(mouthOpen>.01){
     const o=ease(mouthOpen);
-    const wide=c.mouthWide*(r.w/900);
-    const open=c.mouthAmount*(r.w/900)*o;
-    const yawShift=state.smooth.yaw*c.meshPower*.16;
+    const x=p.mouth.x+exprX;
+    const y=p.mouth.y+exprY+o*c.mouthAmount*faceScale*.04;
+    const rx=c.mouthWide*faceScale*(.55+.45*(1-o));
+    const ry=(5+c.mouthAmount*.50*o)*faceScale;
     g.save();
-    g.globalAlpha=.88*o;
-    g.fillStyle="rgba(10,2,12,.9)";
-    g.beginPath();
-    const rx=wide*(.70+.30*(1-o));
-    const ry=5*(r.w/900)+open*.45;
-    g.ellipse(x+yawShift,y+open*.12,rx,ry,0,0,Math.PI*2);
-    g.fill();
-    g.globalAlpha=.22*o;
-    g.fillStyle="rgba(255,255,255,.85)";
-    g.beginPath();
-    g.ellipse(x+yawShift,y+open*.38,rx*.42,Math.max(1,ry*.12),0,0,Math.PI*2);
-    g.fill();
+    g.globalAlpha=.94*o;
+    g.fillStyle="rgba(8,2,10,.92)";
+    g.beginPath();g.ellipse(x,y,rx,ry,0,0,Math.PI*2);g.fill();
+    g.globalAlpha=.18*o;
+    g.fillStyle="rgba(255,255,255,.9)";
+    g.beginPath();g.ellipse(x,y+ry*.32,rx*.38,Math.max(1,ry*.12),0,0,Math.PI*2);g.fill();
     g.restore();
   }
 
   const b=state.smooth.blink;
   if(b>.01){
     ["leftEye","rightEye"].forEach(k=>{
-      const p=state.points[k];if(!p)return;
-      const x=r.x+p.x*r.w+state.smooth.yaw*c.meshPower*.10;
-      const y=r.y+p.y*r.h;
+      const eye=p[k];
+      const x=eye.x+exprX+yaw*c.headMove*faceScale*.08;
+      const y=eye.y+exprY;
       const close=ease(b);
-      const w=72*(r.w/900),h=(7+c.blinkAmount*.56)*(r.w/900)*close;
+      const w=78*faceScale, h=(8+c.blinkAmount*.62)*faceScale*close;
       g.save();
-      g.globalAlpha=.93*close;
-      g.fillStyle="rgba(12,10,18,.9)";
-      roundRect(g,x-w/2,y-h/2,w,h,999);
-      g.fill();
-      g.globalAlpha=.50*close;
-      g.strokeStyle="rgba(255,220,230,.75)";
-      g.lineWidth=2.5*(r.w/900);
-      g.beginPath();
-      g.moveTo(x-w*.38,y);
-      g.quadraticCurveTo(x,y+h*.50,x+w*.38,y);
-      g.stroke();
+      g.globalAlpha=.95*close;
+      g.fillStyle="rgba(11,9,16,.92)";
+      roundRect(g,x-w/2,y-h/2,w,h,999);g.fill();
+      g.globalAlpha=.55*close;
+      g.strokeStyle="rgba(255,220,230,.78)";
+      g.lineWidth=2.5*faceScale;
+      g.beginPath();g.moveTo(x-w*.38,y);g.quadraticCurveTo(x,y+h*.56,x+w*.38,y);g.stroke();
       g.restore();
     });
   }
 
-  const ew=c.eyeWander*(r.w/900);
-  if(ew>0 && b<.2){
-    const ex=state.smooth.eyeX*ew,ey=state.smooth.eyeY*ew*.45;
+  // eye sparkle gaze
+  if(c.eyeWander>0 && b<.2){
+    const ex=state.smooth.eyeX*c.eyeWander*faceScale;
+    const ey=state.smooth.eyeY*c.eyeWander*faceScale*.45;
     ["leftEye","rightEye"].forEach(k=>{
-      const p=state.points[k];if(!p)return;
-      const x=r.x+p.x*r.w+ex,y=r.y+p.y*r.h+ey;
-      g.save();
-      g.globalAlpha=.35;
-      g.fillStyle="rgba(126,231,255,.75)";
-      g.beginPath();g.arc(x+8*(r.w/900),y-9*(r.w/900),4*(r.w/900),0,Math.PI*2);g.fill();
+      const eye=p[k];
+      const x=eye.x+exprX+ex, y=eye.y+exprY+ey;
+      g.save();g.globalAlpha=.42;g.fillStyle="rgba(126,231,255,.82)";
+      g.beginPath();g.arc(x+8*faceScale,y-9*faceScale,4.3*faceScale,0,Math.PI*2);g.fill();
       g.restore();
     });
   }
+}
+
+function clipEllipse(g,cx,cy,rx,ry){
+  g.beginPath();
+  g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+  g.clip();
+}
+
+function drawGuides(g,r,p){
+  const c=state.controls;
+  const headR=c.faceRadius*(r.w/900);
+  g.save();
+  g.strokeStyle="rgba(126,231,255,.45)";
+  g.lineWidth=2;
+  g.beginPath();g.ellipse(p.face.x+state.smooth.headX,p.face.y+headR*.10+state.smooth.headY,headR*1.25,headR*1.58,0,0,Math.PI*2);g.stroke();
+  g.strokeStyle="rgba(255,255,255,.25)";
+  g.beginPath();g.moveTo(p.neck.x-30,p.neck.y);g.lineTo(p.neck.x+30,p.neck.y);g.stroke();
+  g.restore();
 }
 
 function drawPoints(g,r){
@@ -401,11 +462,11 @@ function updateMic(){
   let sum=0;
   for(const b of state.mic.data){const v=(b-128)/128;sum+=v*v;}
   const rms=Math.sqrt(sum/state.mic.data.length);
-  state.mic.level=state.mic.level*.62+clamp(rms*state.controls.micGain*4.8,0,1)*.38;
+  state.mic.level=state.mic.level*.62+clamp(rms*state.controls.mouthSensitivity*.75,0,1)*.38;
 }
 
 function triggerBlink(manual=false){
-  state.manual.blinkBoost=1.25;
+  state.manual.blinkBoost=1.35;
   if(manual)state.doubleBlink=false;
 }
 function scheduleBlink(){
@@ -413,22 +474,25 @@ function scheduleBlink(){
   state.doubleBlink=Math.random()<.18;
 }
 function updateMotion(now){
-  const c=state.controls;
-  const speed=Number(c.trackingSpeed||0.18);
-  const inertia=Number(c.inertia||0.35);
-
-  let targetYaw=c.yaw/100;
-  if(state.autoYaw)targetYaw=Math.sin(state.t*.024)*.75;
+  const c=state.controls,m=state.motion?1:0;
+  let targetYaw=0;
+  if(state.autoYaw)targetYaw=Math.sin(state.t*.026)*.72;
   if(state.cameraOn)targetYaw=state.track.yaw;
-  targetYaw+=state.manual.yawKey*.85;
-  const yawEase=clamp(speed*(1.15-inertia*.45),.04,.5);
-  state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),yawEase);
+  targetYaw+=state.manual.yawKey*.9;
+  state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),c.trackingSpeed);
+
+  const faceScale=1; // neutral scaler for timing
+  const headTargetX=state.smooth.yaw*c.headMove*m;
+  const idleY=Math.sin(state.t*.021)*c.headIdle*m;
+  state.smooth.headX=lerp(state.smooth.headX,headTargetX,c.headLag);
+  state.smooth.headY=lerp(state.smooth.headY,idleY,c.headLag*.7);
+  state.smooth.neckX=lerp(state.smooth.neckX,headTargetX*.45,c.headLag*(1-c.neckLag*.65));
+  state.smooth.hairX=lerp(state.smooth.hairX,-headTargetX*.55,c.headLag*(1-c.hairLag*.72));
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  const mouthEase=clamp(speed*2.0,.08,.75);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,mouthEase);
-  state.manual.talking*=.82;
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.36);
+  state.manual.talking*=.80;
 
   let targetBlink=state.manual.blinkBoost;
   if(state.cameraOn)targetBlink=Math.max(targetBlink,state.track.blink);
@@ -439,50 +503,36 @@ function updateMotion(now){
     state.doubleBlink=false;
   }
   state.smooth.blink=lerp(state.smooth.blink,targetBlink,.52);
-  state.manual.blinkBoost*=.56;
+  state.manual.blinkBoost*=.55;
 
-  // eyes intentionally lag a little behind head movement
-  state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)+Math.sin(state.t*.007)*.5-state.smooth.yaw*.45,.035);
+  state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)+Math.sin(state.t*.007)*.5-state.smooth.yaw*.55,.035);
   state.smooth.eyeY=lerp(state.smooth.eyeY,Math.sin(state.t*.013),.03);
-
-  updateTrackingMeters();
+  updateMeters();
 }
-
-
-function updateTrackingMeters(){
-  const yaw=Math.round(Math.abs(state.smooth.yaw)*100);
-  const mouth=Math.round(clamp(state.smooth.mouth,0,1)*100);
-  const blink=Math.round(clamp(state.smooth.blink,0,1)*100);
-  const set=(id,val)=>{
-    const t=document.getElementById("meter"+id);
-    const b=document.getElementById("bar"+id);
-    if(t)t.textContent=val+"%";
-    if(b)b.style.width=val+"%";
-  };
-  set("Yaw",yaw);
-  set("Mouth",mouth);
-  set("Blink",blink);
+function updateMeters(){
+  const yaw=Math.round(Math.abs(state.smooth.yaw)*100),mouth=Math.round(clamp(state.smooth.mouth,0,1)*100),blink=Math.round(clamp(state.smooth.blink,0,1)*100);
+  [["Yaw",yaw],["Mouth",mouth],["Blink",blink]].forEach(([id,v])=>{
+    const t=document.getElementById("meter"+id),b=document.getElementById("bar"+id);
+    if(t)t.textContent=v+"%";if(b)b.style.width=v+"%";
+  });
 }
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"0.8",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"1.0",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){
   if(d.points)state.points=d.points;
   if(d.controls)Object.assign(state.controls,d.controls);
-  Object.entries(state.controls).forEach(([k,v])=>{const el=document.getElementById(k);if(!el)return;if(el.type==="checkbox")el.checked=!!v;else el.value=v;});
   updateLabels();
   if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);
 }
-function saveLocal(){try{localStorage.setItem("livepic_v08",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v08");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v10",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v10");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(id==="micGain"||id==="mouthSensitivity"||id==="blinkSensitivity"||id==="yawBoost")v=Number(v).toFixed(1);
-      if(id==="trackingSpeed"||id==="inertia")v=Number(v).toFixed(2);
-      lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["yawBoost","headLag","neckLag","hairLag","mouthSensitivity","blinkSensitivity","faceSquash","trackingSpeed"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
@@ -492,7 +542,6 @@ function loop(now){
   if(state.obs||document.body.classList.contains("obs-mode"))draw(obsCtx,innerWidth,innerHeight,false);
   requestAnimationFrame(loop);
 }
-
 function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 function lerp(a,b,t){return a+(b-a)*t;}
 function ease(x){return 1-Math.pow(1-x,3);}
