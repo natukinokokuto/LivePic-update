@@ -1,30 +1,41 @@
-# LivePic v3.6 Auto Contour Trace Rig
+# LivePic v3.7 Cut/Rig/Live projectState
 
-## 今回の目的
+## 今回の再構成
 
-「輪郭認識をプログラムで自動化してほしい」
-「サンプルの目の位置が微妙にズレている」
+LivePicの中に LivePicCut 的な流れを別タブとして組み込みました。
 
-への対応版です。
+## タブ
 
-## 追加/修正
+### Cut
+- 画像読み込み
+- 基準点設定
+- 輪郭トレース
+- 自動パーツ生成
+- パーツ確認
+- Liveへ即反映
 
-- 実線輪郭トレース
-- 口/目の探索範囲を狭める
-- 口/目の輪郭点を自動抽出
-- 抽出輪郭からマスク生成
-- 輪郭中心から目/口ポイントを自動補正
-- 輪郭トレース自動リグボタン
-- 輪郭だけ検出ボタン
-- サンプル用の初期目/口ポイント補正
-- 輪郭線表示
-- 自動生成→動作確認でも輪郭トレース優先
+### Rig
+- ボーン設定
+- 口/目の動き
+- 表情
+- テスト動作
 
-## 使い方
+### Live
+- Cut/Rigの結果を即プレビュー
 
-1. サンプル
-2. 輪郭トレース自動リグ
-3. 口パクテスト
-4. 瞬きテスト
+### Export
+- パーツPNG保存
+- project JSON保存
 
-ズレる場合は、線の濃さ感度・口探索幅・目探索幅を調整して、輪郭だけ検出を押してください。
+## 重要
+
+今回から projectState を中心にしました。
+
+- projectState.original
+- projectState.points
+- projectState.parts
+- projectState.masks
+- projectState.contours
+- projectState.rig
+
+Cutで編集した内容はLiveに即反映されます。

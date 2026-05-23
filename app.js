@@ -1,2312 +1,465 @@
-window.addEventListener("error", e=>{
-  const m=document.getElementById("dropMessage");
-  if(m){m.style.display="block";m.textContent="エラー: "+e.message;}
-  console.error(e);
-});
+window.addEventListener("error", e=>reportError("runtime", e));
 
-const canvas=document.getElementById("canvas");
-const ctx=canvas.getContext("2d");
-const obsCanvas=document.getElementById("obsCanvas");
-const obsCtx=obsCanvas.getContext("2d");
+const canvases = {
+  cut: document.getElementById("canvas"),
+  rig: document.getElementById("rigCanvas"),
+  live: document.getElementById("liveCanvas"),
+  obs: document.getElementById("obsCanvas")
+};
+const ctxs = Object.fromEntries(Object.entries(canvases).map(([k,c])=>[k,c.getContext("2d")]));
 const video=document.getElementById("video");
 
-const state={
-  image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,parts:null,segmentation:null,contours:null,showSegmentation:false,partsPreviewOpen:false,
-  points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
-  controls:{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,contourTraceMode:true,lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:0.95,eyeSearchScale:0.90,autoRefinePoints:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
-    headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
-    mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
-    blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
-    breath:5,trackingSpeed:0.20
-  },
-  track:{yaw:0,mouth:0,blink:0,hasFace:false},
-  smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
-  manual:{talking:0,blinkBoost:0,yawKey:0,mouthHoldUntil:0,blinkHoldUntil:0},
-  view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,dragMoved:false},
-  mic:{enabled:false,stream:null,audioCtx:null,analyser:null,data:null,level:0},
-  t:0,lastFrame:performance.now(),fps:0,nextBlink:0,doubleBlink:false
-};
-
-const labels={face:"顔中心",leftEye:"左目",rightEye:"右目",mouth:"口",chin:"あご",neck:"首",body:"体中心",hair:"髪中心"};
+const labels={face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",chin:"あご",neck:"首",body:"体",hair:"髪"};
 const colors={face:"#ffe66d",leftEye:"#ff66c4",rightEye:"#ff66c4",mouth:"#ff9f43",chin:"#ff7675",neck:"#55efc4",body:"#74b9ff",hair:"#a29bfe"};
 
-const sampleSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
-<defs><linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#30264c"/><stop offset="100%" stop-color="#141827"/></linearGradient><linearGradient id="cloth" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#fff"/><stop offset="100%" stop-color="#dfe7ff"/></linearGradient></defs>
-<rect width="900" height="1200" fill="none"/><ellipse cx="450" cy="1030" rx="250" ry="120" fill="#12131e" opacity=".25"/>
-<path d="M250 520 C170 690 165 930 260 1090 L640 1090 C735 930 730 690 650 520 C610 420 300 420 250 520Z" fill="url(#cloth)" stroke="#30364e" stroke-width="8"/>
-<path d="M375 520 L525 520 L505 650 L395 650Z" fill="#ffd8c8" stroke="#30364e" stroke-width="6"/>
-<path d="M210 250 C210 95 330 45 450 45 C570 45 690 95 690 250 C720 500 695 790 620 980 C600 760 580 620 560 510 C520 560 380 560 340 510 C320 620 300 760 280 980 C205 790 180 500 210 250Z" fill="url(#hair)" stroke="#0d0f18" stroke-width="8"/>
-<ellipse cx="450" cy="340" rx="205" ry="245" fill="#ffd8c8" stroke="#30364e" stroke-width="8"/>
-<path d="M270 280 C330 150 570 150 630 280 C570 220 330 220 270 280Z" fill="url(#hair)"/>
-<path d="M285 260 C330 135 520 110 610 235 C515 190 380 200 285 260Z" fill="url(#hair)" stroke="#0d0f18" stroke-width="5"/>
-<ellipse cx="365" cy="355" rx="42" ry="34" fill="#fff"/><ellipse cx="535" cy="355" rx="42" ry="34" fill="#fff"/><circle cx="365" cy="358" r="20" fill="#8f69ff"/><circle cx="535" cy="358" r="20" fill="#8f69ff"/><circle cx="372" cy="348" r="7" fill="#fff"/><circle cx="542" cy="348" r="7" fill="#fff"/>
-<path d="M330 310 C360 290 390 292 410 315" fill="none" stroke="#1a1d2c" stroke-width="10" stroke-linecap="round"/><path d="M490 315 C510 292 540 290 570 310" fill="none" stroke="#1a1d2c" stroke-width="10" stroke-linecap="round"/>
-<path d="M445 365 C435 410 430 420 450 430" fill="none" stroke="#e7a99b" stroke-width="7" stroke-linecap="round"/><path d="M405 475 C435 505 470 505 500 475" fill="none" stroke="#8f3340" stroke-width="11" stroke-linecap="round"/>
-<circle cx="315" cy="430" r="24" fill="#ff9eb3" opacity=".45"/><circle cx="585" cy="430" r="24" fill="#ff9eb3" opacity=".45"/><path d="M350 655 L450 760 L550 655" fill="#252944" stroke="#151827" stroke-width="8"/><circle cx="450" cy="705" r="30" fill="#8f69ff" stroke="#fff" stroke-width="6"/></svg>`;
+const projectState={
+  version:"3.7",
+  original:null,
+  originalDataUrl:"",
+  points:{},
+  parts:{},
+  masks:{},
+  contours:{},
+  inpainted:null,
+  rig:{
+    headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,
+    mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,
+    eyeLayerClose:1.75,eyeLayerAlpha:.95,blinkHold:1.4,eyeSmile:.10,
+    lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:.95,eyeSearchScale:.90,
+    inpaintStrength:.85,showMasks:true,showPins:true
+  }
+};
+
+const runtime={
+  tab:"cut", viewMode:"original", tool:"face", activeCanvas:"cut",
+  view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,moved:false},
+  t:0,lastFrame:performance.now(),fps:0,
+  smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
+  manual:{talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0},
+  autoYaw:false, obs:false, cameraOn:false, micOn:false,
+  showHelpers:true
+};
 
 init();
 
 function init(){
   wire();
-  fitCanvas();fitObs();updateLabels();updateZoomUi();scheduleBlink();
+  resizeAll();
   loadSample();
-  setTimeout(()=>{ if(!state.image) loadSample(); }, 800);
-  if(new URLSearchParams(location.search).get("obs")==="1")openObs(true);
   requestAnimationFrame(loop);
-}
-
-function setDebugStatus(kind,text){
-  const id = kind === "image" ? "imageStatus" : kind === "mesh" ? "meshStatus" : "renderStatus";
-  const el = document.getElementById(id);
-  if(el) el.textContent = (kind === "image" ? "Image: " : kind === "mesh" ? "Mesh: " : "Render: ") + text;
-}
-
-
-
-function reportError(msg,err){
-  const el=document.getElementById("errorStatus");
-  const text = err ? `${msg}: ${err.message || err}` : msg;
-  if(el) el.textContent=text;
-  console.error(text, err || "");
-}
-function clearError(){
-  const el=document.getElementById("errorStatus");
-  if(el) el.textContent="エラーなし";
-}
-function onClickSafe(id,fn){
-  const el=document.getElementById(id);
-  if(!el){
-    console.warn("missing element",id);
-    return;
-  }
-  el.onclick=(ev)=>{
-    try{
-      clearError();
-      fn(ev);
-    }catch(err){
-      reportError(id+" 実行エラー",err);
-    }
-  };
-}
-function flashStage(){
-  const st=document.getElementById("stage");
-  if(!st)return;
-  st.classList.remove("motion-flash");
-  void st.offsetWidth;
-  st.classList.add("motion-flash");
 }
 
 function wire(){
-  window.addEventListener("resize",()=>{fitCanvas();fitObs();});
-  document.getElementById("fileInput").addEventListener("change",e=>{const f=e.target.files[0];if(f)loadFile(f);});
-  document.getElementById("sampleBtn").onclick=loadSample;
-  document.getElementById("detectBtn").onclick=detectFaceFromImage;
-  document.getElementById("presetBtn").onclick=applyPreset;
-  document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
-  document.getElementById("autoPointsBtn").onclick=autoPoints;
-  document.getElementById("buildMasksBtn").onclick=buildAutoMasksAndLayers;
-  document.getElementById("clearMasksBtn").onclick=()=>{state.layers=null; state.parts=null; state.segmentation=null; renderPartsPreview();setMaskStatus("マスク解除しました","warn");};
-  document.getElementById("toggleMaskViewBtn").onclick=()=>{state.showMasks=!state.showMasks;state.controls.showMaskOverlay=state.showMasks;document.getElementById("toggleMaskViewBtn").textContent=state.showMasks?"マスク表示 ON":"マスク表示 OFF";updateLabels();};
-  document.getElementById("togglePinsBtn").onclick=()=>{state.controls.showPins=!state.controls.showPins;document.getElementById("togglePinsBtn").textContent=state.controls.showPins?"ピン表示 ON":"ピン表示 OFF";updateLabels();};
-  document.getElementById("hideAllGuidesBtn").onclick=hideAllGuides;
-  document.getElementById("rebuildLayersBtn").onclick=buildAutoMasksAndLayers;
-  document.getElementById("analyzeMouthBtn").onclick=()=>rebuildSpecificContour("mouth");
-  document.getElementById("analyzeEyesBtn").onclick=()=>rebuildSpecificContour("eyes");
-  document.getElementById("sampleRigBtn").onclick=applySampleRigPreset;
-  document.getElementById("forceMotionBtn").onclick=()=>{state.manual.talking=1.6;triggerBlink(true);state.autoYaw=true;document.getElementById("autoYawBtn").textContent="顔向き自動 ON";};
-  document.getElementById("autoPartsBtn").onclick=generateAutoParts;
-  document.getElementById("downloadPartsBtn").onclick=downloadGeneratedParts;
-  document.getElementById("applyPartsRigBtn").onclick=applyGeneratedPartsRig;
-  document.getElementById("previewPartsBtn").onclick=()=>{state.partsPreviewOpen=!state.partsPreviewOpen;renderPartsPreview();};
-  document.getElementById("segmentationBtn").onclick=generateLocalSegmentation;
-  document.getElementById("segDebugBtn").onclick=()=>{state.showSegmentation=!state.showSegmentation;document.getElementById("segDebugBtn").textContent=state.showSegmentation?"分類表示 ON":"分類表示 OFF";};
-  document.getElementById("segPartsBtn").onclick=generatePartsFromSegmentation;
-  document.getElementById("segDownloadBtn").onclick=downloadSegmentationPNGs;
-  document.getElementById("exprSmileBtn").onclick=()=>applyExpression("smile");
-  document.getElementById("exprResetBtn").onclick=()=>applyExpression("neutral");
-  document.getElementById("resetViewBtn").onclick=()=>{state.view.zoom=1;state.view.panX=0;state.view.panY=0;updateZoomUi();};
-  document.getElementById("motionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("motionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
-  document.getElementById("trackingBtn").onclick=toggleTracking;
-  document.getElementById("micBtn").onclick=toggleMic;
-  document.getElementById("meshLineBtn").onclick=()=>{state.showMeshLines=!state.showMeshLines;document.getElementById("meshLineBtn").textContent=state.showMeshLines?"メッシュ線 ON":"メッシュ線 OFF";};
-  document.getElementById("blinkBtn").onclick=()=>triggerBlink(true);
-  document.getElementById("talkBtn").onclick=()=>state.manual.talking=1.4;
-  document.getElementById("autoYawBtn").onclick=()=>{state.autoYaw=!state.autoYaw;document.getElementById("autoYawBtn").textContent=state.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";};
-  document.getElementById("centerBtn").onclick=()=>{state.controls.manualYaw=0;state.track.yaw=0;state.smooth.yaw=0;updateLabels();};
-  document.getElementById("obsBtn").onclick=()=>openObs(false);
-  document.getElementById("closeObsBtn").onclick=closeObs;
-  document.getElementById("saveBtn").onclick=()=>{saveLocal();alert("保存しました");};
-  document.getElementById("loadBtn").onclick=()=>restoreLocal(true);
-  document.getElementById("exportBtn").onclick=()=>document.getElementById("settingsBox").value=JSON.stringify(settings(),null,2);
-  document.getElementById("importBtn").onclick=()=>{try{applySettings(JSON.parse(document.getElementById("settingsBox").value));saveLocal();alert("読み込みました");}catch(e){alert("JSONが読めません");}};
+  window.addEventListener("resize", resizeAll);
+  document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>switchTab(btn.dataset.tab));
+  on("loadSampleBtn", loadSample);
+  on("fileInput", e=>loadFile(e.target.files[0]), "change");
+  on("saveProjectBtn", saveProject);
+  on("loadProjectBtn", loadProject);
+  on("obsBtn", openObs);
+  on("closeObsBtn", closeObs);
 
-  Object.keys(state.controls).forEach(id=>{
+  on("autoPointsBtn", autoPoints);
+  on("traceBtn", ()=>{traceContours();syncToLive("輪郭トレースOK");});
+  on("autoPartsBtn", ()=>{generateParts();syncToLive("自動パーツ生成OK");});
+  on("applyToLiveBtn", ()=>syncToLive("Liveへ反映しました"));
+  on("hideHelpersBtn", ()=>{runtime.showHelpers=false;projectState.rig.showMasks=false;projectState.rig.showPins=false;updateControls();});
+  on("showHelpersBtn", ()=>{runtime.showHelpers=true;projectState.rig.showMasks=true;projectState.rig.showPins=true;updateControls();});
+
+  on("showOriginalBtn", ()=>runtime.viewMode="original");
+  on("showInpaintBtn", ()=>runtime.viewMode="inpaint");
+  on("showPartsBtn", ()=>{runtime.viewMode="parts";renderPartsPreview();});
+  on("showLivePreviewBtn", ()=>runtime.viewMode="live");
+
+  document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
+
+  on("applyRigPresetBtn", applyRigPreset);
+  on("exprNeutralBtn", ()=>applyExpression("neutral"));
+  on("exprSmileBtn", ()=>applyExpression("smile"));
+  on("testMouthBtn", testMouth);
+  on("testBlinkBtn", testBlink);
+  on("testMotionBtn", testMotion);
+  on("resetMotionBtn", resetMotion);
+  on("toggleAutoYawBtn", toggleAutoYaw);
+  on("liveAutoYawBtn", toggleAutoYaw);
+  on("toggleTrackingBtn", ()=>setStatus("rigStatus","顔トラッキングは次段階で再接続予定"));
+  on("toggleMicBtn", ()=>setStatus("rigStatus","マイク口パクは次段階で再接続予定"));
+  on("rigPreviewBtn", ()=>switchTab("rig"));
+
+  on("liveMouthBtn", testMouth);
+  on("liveBlinkBtn", testBlink);
+  on("liveResetBtn", resetMotion);
+
+  on("downloadPartsBtn", downloadParts);
+  on("downloadProjectBtn", downloadProjectJson);
+
+  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins"].forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
     el.addEventListener(el.type==="checkbox"?"change":"input",()=>{
-      state.controls[id]=el.type==="checkbox"?el.checked:Number(el.value);
-      updateLabels();
+      projectState.rig[id]=el.type==="checkbox"?el.checked:Number(el.value);
+      updateControls();
+      syncToLive("Rig変更を反映");
     });
   });
 
-  canvas.addEventListener("mousedown",e=>{state.view.dragging=true;state.view.lastX=e.clientX;state.view.lastY=e.clientY;state.view.dragMoved=false;});
-  window.addEventListener("mousemove",e=>{
-    if(!state.view.dragging)return;
-    const dx=e.clientX-state.view.lastX,dy=e.clientY-state.view.lastY;
-    if(Math.abs(dx)+Math.abs(dy)>3)state.view.dragMoved=true;
-    state.view.panX+=dx;state.view.panY+=dy;state.view.lastX=e.clientX;state.view.lastY=e.clientY;
+  setupCanvasInteraction(canvases.cut);
+  updateControls();
+}
+
+function on(id,fn,type="click"){
+  const el=document.getElementById(id);
+  if(!el){console.warn("missing",id);return;}
+  el.addEventListener(type,e=>{try{clearError();fn(e);}catch(err){reportError(id,err);}});
+}
+
+function switchTab(tab){
+  runtime.tab=tab;
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+  document.querySelectorAll(".tab-page").forEach(p=>p.classList.toggle("active",p.id===`tab-${tab}`));
+  setTimeout(resizeAll,30);
+}
+
+function resizeAll(){
+  Object.values(canvases).forEach(c=>{
+    if(!c)return;
+    const box=c.parentElement.getBoundingClientRect();
+    c.width=Math.max(1,Math.floor(box.width));
+    c.height=Math.max(1,Math.floor(box.height));
+    c.style.width=box.width+"px";
+    c.style.height=box.height+"px";
   });
-  window.addEventListener("mouseup",()=>state.view.dragging=false);
-  canvas.addEventListener("click",e=>{if(state.view.dragMoved){state.view.dragMoved=false;return;}placePoint(e);});
-  canvas.addEventListener("wheel",e=>{e.preventDefault();state.view.zoom=clamp(state.view.zoom*(e.deltaY<0?1.12:.88),.5,4.5);updateZoomUi();},{passive:false});
-  document.getElementById("zoomRange").addEventListener("input",e=>{state.view.zoom=Number(e.target.value)/100;updateZoomUi();});
-  document.getElementById("zoomInBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom*1.2,.5,4.5);updateZoomUi();};
-  document.getElementById("zoomOutBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom/1.2,.5,4.5);updateZoomUi();};
-
-  window.addEventListener("keydown",e=>{
-    if(e.repeat)return;
-    if(e.code==="KeyA")state.manual.yawKey=-1;
-    if(e.code==="KeyD")state.manual.yawKey=1;
-    if(e.code==="Space"){e.preventDefault();state.manual.talking=1.4;}
-    if(e.code==="KeyB")triggerBlink(true);
-  });
-  window.addEventListener("keyup",e=>{if(["KeyA","KeyD"].includes(e.code))state.manual.yawKey=0;});
-  robustReconnectButtons();
-}
-
-
-function robustReconnectButtons(){
-  onClickSafe("sampleBtn", loadSample);
-  onClickSafe("autoPartsBtn", generateAutoPartsSafe);
-  onClickSafe("segmentationBtn", generateLocalSegmentationSafe);
-  onClickSafe("segPartsBtn", generatePartsFromSegmentationSafe);
-  onClickSafe("applyPartsRigBtn", applyGeneratedPartsRigSafe);
-  onClickSafe("sampleRigBtn", applySampleRigPresetSafe);
-  onClickSafe("oneClickRigBtn", oneClickAutoRig);
-  onClickSafe("traceRigBtn", oneClickContourRig);
-  onClickSafe("traceOnlyBtn", traceContoursOnly);
-  onClickSafe("panicResetBtn", panicReset);
-  onClickSafe("talkBtn", forceTalkMotion);
-  onClickSafe("blinkBtn", forceBlinkMotion);
-  onClickSafe("forceMotionBtn", forceBigMotion);
-  onClickSafe("exprSmileBtn", ()=>applyExpression("smile"));
-  onClickSafe("exprResetBtn", ()=>applyExpression("neutral"));
-}
-
-function generateAutoPartsSafe(){
-  ensureImageAndPoints();
-  if(state.controls.segmentationMode){
-    generateLocalSegmentationSafe();
-    generatePartsFromSegmentationSafe();
-  }else{
-    generateAutoParts();
-  }
-  renderPartsPreview();
-  flashStage();
-}
-function generateLocalSegmentationSafe(){
-  ensureImageAndPoints();
-  generateLocalSegmentation();
-  flashStage();
-}
-function generatePartsFromSegmentationSafe(){
-  ensureImageAndPoints();
-  if(!state.segmentation) generateLocalSegmentation();
-  generatePartsFromSegmentation();
-  renderPartsPreview();
-  flashStage();
-}
-function applyGeneratedPartsRigSafe(){
-  ensureImageAndPoints();
-  if(!state.parts){
-    generateAutoPartsSafe();
-  }
-  applyGeneratedPartsRig();
-  ensureMotionVisibleDefaults();
-  flashStage();
-}
-function applySampleRigPresetSafe(){
-  ensureImageAndPoints();
-  applySampleRigPreset();
-  ensureMotionVisibleDefaults();
-  flashStage();
-}
-
-function ensureImageAndPoints(){
-  if(!state.image){
-    loadSample();
-    throw new Error("画像を読み込み中です。もう一度押してください。");
-  }
-  const p=normPoints();
-  if(!state.points.face) autoPoints();
-}
-
-function ensureMotionVisibleDefaults(){
-  Object.assign(state.controls,{
-    cutoutLayerMode:true,
-    live2dLayerMode:true,
-    boneRigMode:true,
-    safeDeform:true,
-    meshEnabled:false,
-    safeUnderlay:true,
-    showPins:false,
-    showGuideCircles:false,
-    showMaskOverlay:false,
-    meshOpacity:0.35,
-    mouthLayerOpen:1.8,
-    mouthLayerDrop:42,
-    mouthCloseSnap:0.15,
-    mouthSmile:0.10,
-    syntheticMouthLayer:true,
-    mouthLayerAlpha:0.95,
-    mouthHold:1.8,
-    eyeLayerClose:1.75,
-    eyeLayerFollow:0.65,
-    upperLid:1.0,
-    lowerLid:0.20,
-    syntheticEyeLayer:true,
-    eyeLayerAlpha:0.95,
-    blinkHold:1.4,
-    blinkPower:120,
-    mouthSensitivity:12,
-    blinkSensitivity:12
-  });
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  updateLabels();
-}
-
-function forceTalkMotion(){
-  ensureMotionVisibleDefaults();
-  const hold=Number(state.controls.mouthHold||1.8)*1000;
-  state.manual.talking=1.8;
-  state.manual.mouthHoldUntil=performance.now()+hold;
-  state.smooth.mouth=1.0;
-  const btn=document.getElementById("talkBtn");
-  if(btn) btn.textContent="口パク中";
-  setTimeout(()=>{ if(btn) btn.textContent="口パクテスト"; }, hold);
-  flashStage();
-}
-function forceBlinkMotion(){
-  ensureMotionVisibleDefaults();
-  const hold=Number(state.controls.blinkHold||1.4)*1000;
-  triggerBlink(true);
-  state.manual.blinkHoldUntil=performance.now()+hold;
-  state.smooth.blink=1.0;
-  const btn=document.getElementById("blinkBtn");
-  if(btn) btn.textContent="瞬き中";
-  setTimeout(()=>{ if(btn) btn.textContent="瞬きテスト"; }, hold);
-  flashStage();
-}
-function forceBigMotion(){
-  ensureMotionVisibleDefaults();
-  state.manual.talking=1.8;
-  state.manual.mouthHoldUntil=performance.now()+Number(state.controls.mouthHold||1.8)*1000;
-  state.manual.blinkHoldUntil=performance.now()+Number(state.controls.blinkHold||1.4)*1000;
-  state.smooth.mouth=1.0;
-  state.smooth.blink=1.0;
-  state.autoYaw=true;
-  const ay=document.getElementById("autoYawBtn");
-  if(ay) ay.textContent="顔向き自動 ON";
-  flashStage();
-}
-function oneClickAutoRig(){
-  ensureImageAndPoints();
-  if(state.controls.contourTraceMode){
-    oneClickContourRig();
-    return;
-  }
-  generateLocalSegmentationSafe();
-  generatePartsFromSegmentationSafe();
-  applyGeneratedPartsRigSafe();
-  ensureMotionVisibleDefaults();
-  state.manual.talking=1.4;
-  state.smooth.mouth=1.0;
-  state.smooth.blink=1.0;
-  setPartsStatus("自動生成→リグ適用→動作確認まで実行しました","good");
-  flashStage();
-}
-function panicReset(){
-  state.smooth.mouth=0;
-  state.smooth.blink=0;
-  state.smooth.yaw=0;
-  state.manual.talking=0;
-  state.manual.blinkBoost=0;
-  state.autoYaw=false;
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  Object.assign(state.controls,{
-    showPins:false,
-    showGuideCircles:false,
-    showMaskOverlay:false,
-    meshEnabled:false,
-    safeUnderlay:true,
-    cutoutLayerMode:true,
-    live2dLayerMode:true
-  });
-  updateLabels();
-  const ay=document.getElementById("autoYawBtn");
-  if(ay) ay.textContent="顔向き自動 OFF";
-  setPartsStatus("表示/動作をリセットしました","warn");
-  flashStage();
-}
-
-function applyPreset(){
-  Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,segmentationMode:true,skinTolerance:76,hairTolerance:98,mouthRedBoost:1.6,segSmooth:6,contourTraceMode:true,lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:0.95,eyeSearchScale:0.90,autoRefinePoints:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
-    headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
-    mouthSensitivity:8.5,mouthOpenPower:96,mouthRadius:92,jawDrop:38,vowelMix:0.55,roundMouth:36,mouthLayerOpen:1.15,mouthLayerDrop:22,
-    blinkSensitivity:8.4,blinkPower:82,eyeRadius:76,farEyeSquash:0.18,eyeLag:0.35,eyeLayerClose:1.10,eyeLayerFollow:0.55,
-    breath:5,trackingSpeed:0.20
-  });
-  updateLabels();
-  alert("Live2D寄せプリセットを適用しました");
-}
-
-function applySampleRigPreset(){
-  // Tuned for the bundled black-haired sample character.
-  Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.72,partWeights:true,partSeparation:0.40,
-    live2dLayerMode:true,layerOpacity:0.82,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,
-    maskFeather:18,inpaintStrength:0.82,showPins:false,showGuideCircles:false,showMaskOverlay:false,seamBlend:0.65,
-    contourMaskMode:true,mouthEdgeSensitivity:2.2,eyeEdgeSensitivity:2.0,contourGrow:10,contourSmooth:7,skinSampleRadius:26,
-    meshDensity:34,globalPower:0.85,faceRadius:215,yawBoost:1.15,manualYaw:0,
-    headShift:14,faceSquash:0.04,cheekPower:8,noseShift:6,chinFollow:10,hairLag:0.62,neckLag:0.42,
-    headRotate:2.6,neckFollow:0.30,hairDelay:0.42,boneRigMode:true,headBone:0.75,neckBone:0.42,bodyBone:0.18,hairBone:0.62,
-    mouthSensitivity:8.5,mouthOpenPower:72,mouthRadius:88,jawDrop:24,vowelMix:0.45,roundMouth:34,
-    mouthLayerOpen:1.10,mouthLayerDrop:18,mouthSmile:0.15,mouthCloseSnap:0.65,mouthWideBone:0.65,
-    blinkSensitivity:8.4,blinkPower:70,eyeRadius:72,farEyeSquash:0.12,eyeLag:0.32,
-    eyeLayerClose:1.10,eyeLayerFollow:0.50,eyeSmile:0.10,upperLid:0.75,lowerLid:0.35,
-    breath:5,trackingSpeed:0.18
-  });
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  updateLabels();
-  buildAutoMasksAndLayers(false);
-  setMaskStatus("サンプル用リグ設定を適用しました","good");
-}
-
-
-function applyExpression(name){
-  if(name==="smile"){
-    Object.assign(state.controls,{
-      mouthSmile:0.72,
-      eyeSmile:0.58,
-      upperLid:0.62,
-      lowerLid:0.62,
-      mouthLayerOpen:1.0,
-      mouthCloseSnap:0.72
-    });
-    state.manual.talking=0.35;
-    setMaskStatus("笑顔表情を適用しました","good");
-  }else{
-    Object.assign(state.controls,{
-      mouthSmile:0.15,
-      eyeSmile:0.10,
-      upperLid:0.75,
-      lowerLid:0.35,
-      mouthCloseSnap:0.65
-    });
-    setMaskStatus("通常表情に戻しました","good");
-  }
-  updateLabels();
-}
-
-
-function selectTool(b){
-  document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active");state.tool=b.dataset.point;
-  document.getElementById("toolReadout").textContent="選択中: "+labels[state.tool];
-}
-function loadFile(file){
-  const status=document.getElementById("status");
-  if(!file){return;}
-  if(status) status.textContent="ファイル読み込み中: "+file.name;
-  const r=new FileReader();
-  r.onload=()=>loadImage(r.result,file.name,true);
-  r.onerror=()=>{
-    if(status) status.textContent="ファイル読み込み失敗: "+file.name;
-  };
-  r.readAsDataURL(file);
-}
-
-function createSamplePngDataUrl(){
-  const c=document.createElement("canvas");
-  c.width=900;
-  c.height=1200;
-  const g=c.getContext("2d");
-
-  g.clearRect(0,0,c.width,c.height);
-
-  // shadow
-  g.fillStyle="rgba(18,19,30,.25)";
-  g.beginPath();g.ellipse(450,1030,250,120,0,0,Math.PI*2);g.fill();
-
-  // body
-  const cloth=g.createLinearGradient(250,520,650,1090);
-  cloth.addColorStop(0,"#ffffff");cloth.addColorStop(1,"#dfe7ff");
-  g.fillStyle=cloth;g.strokeStyle="#30364e";g.lineWidth=8;
-  g.beginPath();
-  g.moveTo(250,520);
-  g.bezierCurveTo(170,690,165,930,260,1090);
-  g.lineTo(640,1090);
-  g.bezierCurveTo(735,930,730,690,650,520);
-  g.bezierCurveTo(610,420,300,420,250,520);
-  g.closePath();g.fill();g.stroke();
-
-  // neck
-  g.fillStyle="#ffd8c8";g.strokeStyle="#30364e";g.lineWidth=6;
-  g.beginPath();g.moveTo(375,520);g.lineTo(525,520);g.lineTo(505,650);g.lineTo(395,650);g.closePath();g.fill();g.stroke();
-
-  // hair back
-  const hair=g.createLinearGradient(210,45,690,980);
-  hair.addColorStop(0,"#30264c");hair.addColorStop(1,"#141827");
-  g.fillStyle=hair;g.strokeStyle="#0d0f18";g.lineWidth=8;
-  g.beginPath();
-  g.moveTo(210,250);
-  g.bezierCurveTo(210,95,330,45,450,45);
-  g.bezierCurveTo(570,45,690,95,690,250);
-  g.bezierCurveTo(720,500,695,790,620,980);
-  g.bezierCurveTo(600,760,580,620,560,510);
-  g.bezierCurveTo(520,560,380,560,340,510);
-  g.bezierCurveTo(320,620,300,760,280,980);
-  g.bezierCurveTo(205,790,180,500,210,250);
-  g.closePath();g.fill();g.stroke();
-
-  // face
-  g.fillStyle="#ffd8c8";g.strokeStyle="#30364e";g.lineWidth=8;
-  g.beginPath();g.ellipse(450,340,205,245,0,0,Math.PI*2);g.fill();g.stroke();
-
-  // bangs
-  g.fillStyle=hair;g.strokeStyle="#0d0f18";g.lineWidth=5;
-  g.beginPath();
-  g.moveTo(270,280);
-  g.bezierCurveTo(330,150,570,150,630,280);
-  g.bezierCurveTo(570,220,330,220,270,280);
-  g.closePath();g.fill();
-  g.beginPath();
-  g.moveTo(285,260);
-  g.bezierCurveTo(330,135,520,110,610,235);
-  g.bezierCurveTo(515,190,380,200,285,260);
-  g.closePath();g.fill();g.stroke();
-
-  // eyes
-  g.fillStyle="#fff";
-  g.beginPath();g.ellipse(365,355,42,34,0,0,Math.PI*2);g.fill();
-  g.beginPath();g.ellipse(535,355,42,34,0,0,Math.PI*2);g.fill();
-  g.fillStyle="#8f69ff";
-  g.beginPath();g.arc(365,358,20,0,Math.PI*2);g.fill();
-  g.beginPath();g.arc(535,358,20,0,Math.PI*2);g.fill();
-  g.fillStyle="#fff";
-  g.beginPath();g.arc(372,348,7,0,Math.PI*2);g.fill();
-  g.beginPath();g.arc(542,348,7,0,Math.PI*2);g.fill();
-
-  // brows
-  g.strokeStyle="#1a1d2c";g.lineWidth=10;g.lineCap="round";
-  g.beginPath();g.moveTo(330,310);g.bezierCurveTo(360,290,390,292,410,315);g.stroke();
-  g.beginPath();g.moveTo(490,315);g.bezierCurveTo(510,292,540,290,570,310);g.stroke();
-
-  // nose mouth blush
-  g.strokeStyle="#e7a99b";g.lineWidth=7;
-  g.beginPath();g.moveTo(445,365);g.bezierCurveTo(435,410,430,420,450,430);g.stroke();
-  g.strokeStyle="#8f3340";g.lineWidth=11;
-  g.beginPath();g.moveTo(405,475);g.bezierCurveTo(435,505,470,505,500,475);g.stroke();
-  g.fillStyle="rgba(255,158,179,.45)";
-  g.beginPath();g.arc(315,430,24,0,Math.PI*2);g.fill();
-  g.beginPath();g.arc(585,430,24,0,Math.PI*2);g.fill();
-
-  // ribbon
-  g.fillStyle="#252944";g.strokeStyle="#151827";g.lineWidth=8;
-  g.beginPath();g.moveTo(350,655);g.lineTo(450,760);g.lineTo(550,655);g.closePath();g.fill();g.stroke();
-  g.fillStyle="#8f69ff";g.strokeStyle="#fff";g.lineWidth=6;
-  g.beginPath();g.arc(450,705,30,0,Math.PI*2);g.fill();g.stroke();
-
-  return c.toDataURL("image/png");
 }
 
 function loadSample(){
-  const bust = Date.now();
-  loadImage("./sample_character.png?v="+bust, "sample_character.png", true);
+  loadImage("./sample_character.png?v="+Date.now(),"sample_character.png");
 }
-function loadImage(url,name,auto){
-  const status=document.getElementById("status");
-  const drop=document.getElementById("dropMessage");
-  if(status) status.textContent="画像読み込み中: "+name;
-  setDebugStatus("image","loading");
+
+function loadFile(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>loadImage(r.result,file.name);
+  r.readAsDataURL(file);
+}
+
+function loadImage(src,name){
   const img=new Image();
   img.onload=()=>{
-    if(!img.width || !img.height){
-      if(status) status.textContent="画像読み込み失敗: サイズを取得できません";
-      setDebugStatus("image","size error");
-      if(drop){drop.style.display="block";drop.textContent="画像読み込み失敗";}
-      return;
-    }
-    state.image=img;
-    state.imageDataUrl=url;
-    state.imageName=name;
-    if(status) status.textContent="画像読み込みOK: "+name+" / "+img.width+"x"+img.height;
-    setDebugStatus("image","OK "+img.width+"x"+img.height);
-    if(drop) drop.style.display="none";
-    if(auto) autoPoints();
-    state.layers=null; state.parts=null; state.segmentation=null; renderPartsPreview();
-    setTimeout(()=>{ buildAutoMasksAndLayers(false); }, 80);
-    saveLocal();
+    projectState.original=img;
+    projectState.originalDataUrl=src;
+    autoPoints();
+    generateParts();
+    document.getElementById("dropMessage").style.display="none";
+    setStatus("cutStatus",`画像読み込みOK: ${name}`);
   };
-  img.onerror=()=>{
-    if(status) status.textContent="画像読み込み失敗: "+name;
-    setDebugStatus("image","load error");
-    if(drop){drop.style.display="block";drop.textContent="画像を読み込めませんでした";}
-    if(name==="sample_character.png"){
-      const fallback = createSamplePngDataUrl();
-      loadImage(fallback, "LivePic_sample_generated_fallback.png", true);
-    }
-  };
-  img.src=url;
+  img.onerror=()=>setStatus("cutStatus","画像読み込み失敗");
+  img.src=src;
 }
+
 function autoPoints(){
-  // Tuned default for the bundled sample; still usable as a generic starting point.
-  state.points={
-    face:{x:.50,y:.36},
-    leftEye:{x:.405,y:.325},
-    rightEye:{x:.595,y:.325},
-    mouth:{x:.50,y:.455},
-    chin:{x:.50,y:.535},
-    neck:{x:.50,y:.585},
-    body:{x:.50,y:.73},
-    hair:{x:.50,y:.235}
+  projectState.points={
+    face:{x:.50,y:.36},leftEye:{x:.405,y:.325},rightEye:{x:.595,y:.325},mouth:{x:.50,y:.455},
+    chin:{x:.50,y:.535},neck:{x:.50,y:.585},body:{x:.50,y:.73},hair:{x:.50,y:.235}
+  };
+  setStatus("cutStatus","基準点プリセットOK");
+}
+
+function selectTool(btn){
+  document.querySelectorAll(".tool").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  runtime.tool=btn.dataset.point;
+  document.getElementById("toolReadout").textContent="選択中: "+labels[runtime.tool];
+}
+
+function setupCanvasInteraction(c){
+  c.addEventListener("mousedown",e=>{runtime.view.dragging=true;runtime.view.lastX=e.clientX;runtime.view.lastY=e.clientY;runtime.view.moved=false;});
+}
+
+window.addEventListener("mousemove",e=>{
+  if(!runtime.view.dragging)return;
+  const dx=e.clientX-runtime.view.lastX,dy=e.clientY-runtime.view.lastY;
+  if(Math.abs(dx)+Math.abs(dy)>3)runtime.view.moved=true;
+  runtime.view.panX+=dx;runtime.view.panY+=dy;
+  runtime.view.lastX=e.clientX;runtime.view.lastY=e.clientY;
+});
+window.addEventListener("mouseup",()=>runtime.view.dragging=false);
+canvases.cut.addEventListener("click",e=>{
+  if(runtime.view.moved){runtime.view.moved=false;return;}
+  placePoint(e);
+});
+canvases.cut.addEventListener("wheel",e=>{
+  e.preventDefault();
+  runtime.view.zoom=clamp(runtime.view.zoom*(e.deltaY<0?1.1:.9),.5,4);
+},{passive:false});
+
+function placePoint(e){
+  if(!projectState.original)return;
+  const rect=canvases.cut.getBoundingClientRect();
+  const r=imageRect(canvases.cut.width,canvases.cut.height,true);
+  projectState.points[runtime.tool]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
+  setStatus("cutStatus",`${labels[runtime.tool]}を移動`);
+}
+
+function imageRect(w,h,editor=false){
+  const img=projectState.original;
+  if(!img)return{x:0,y:0,w:0,h:0};
+  const s=Math.min(w/img.width,h/img.height)*.92;
+  let r={x:(w-img.width*s)/2,y:(h-img.height*s)/2,w:img.width*s,h:img.height*s};
+  if(editor){
+    const cx=w/2,cy=h/2;
+    r={x:cx+(r.x-cx)*runtime.view.zoom+runtime.view.panX,y:cy+(r.y-cy)*runtime.view.zoom+runtime.view.panY,w:r.w*runtime.view.zoom,h:r.h*runtime.view.zoom};
+  }
+  return r;
+}
+
+function traceContours(){
+  if(!projectState.original)return;
+  projectState.contours={
+    mouth:traceFeature(projectState.points.mouth,"mouth"),
+    leftEye:traceFeature(projectState.points.leftEye,"eye"),
+    rightEye:traceFeature(projectState.points.rightEye,"eye")
   };
 }
 
-async function getFaceMesh(){
-  if(state.faceMesh)return state.faceMesh;
-  if(typeof FaceMesh==="undefined")throw new Error("MediaPipe未読込。GitHub Pagesで試してください。");
-  const fm=new FaceMesh({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-  fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
-  state.faceMesh=fm;return fm;
-}
-async function detectFaceFromImage(){
-  const status=document.getElementById("status");
-  try{
-    if(!state.image)throw new Error("先に画像を読み込んでください");
-    status.textContent="顔認識中...";
-    const fm=await getFaceMesh();
-    const result=await new Promise(async(resolve,reject)=>{
-      let done=false;
-      fm.onResults(res=>{if(done)return;done=true;resolve(res);});
-      const temp=document.createElement("canvas");
-      temp.width=state.image.naturalWidth||state.image.width;temp.height=state.image.naturalHeight||state.image.height;
-      temp.getContext("2d").drawImage(state.image,0,0,temp.width,temp.height);
-      try{await fm.send({image:temp});}catch(e){reject(e);}
-      setTimeout(()=>{if(!done)reject(new Error("顔を検出できませんでした"));},3500);
-    });
-    if(!result.multiFaceLandmarks||!result.multiFaceLandmarks[0])throw new Error("顔を検出できませんでした");
-    applyLandmarks(result.multiFaceLandmarks[0]);status.textContent="顔認識OK";saveLocal();
-  }catch(e){status.textContent="顔認識失敗: "+e.message;}
-}
-function applyLandmarks(lm){
-  const avg=ids=>({x:ids.reduce((a,i)=>a+lm[i].x,0)/ids.length,y:ids.reduce((a,i)=>a+lm[i].y,0)/ids.length});
-  const leftEye=avg([33,133,159,145]),rightEye=avg([263,362,386,374]),mouth=avg([13,14,78,308]);
-  const chin=lm[152]||{x:.5,y:.55},nose=lm[1]||{x:.5,y:.35},forehead=lm[10]||{x:nose.x,y:nose.y-.18};
-  state.points.leftEye=leftEye;state.points.rightEye=rightEye;state.points.mouth=mouth;state.points.chin={x:chin.x,y:chin.y};
-  state.points.face={x:nose.x,y:(leftEye.y+rightEye.y+mouth.y)/3};
-  state.points.neck={x:chin.x,y:clamp(chin.y+.07,0,1)};state.points.body={x:chin.x,y:clamp(chin.y+.23,0,1)};
-  state.points.hair={x:forehead.x,y:clamp(forehead.y-.04,0,1)};
-}
-
-async function toggleTracking(){
-  if(state.cameraOn){stopTracking();return;}
-  try{
-    const fm=await getFaceMesh();
-    fm.onResults(onCameraResults);
-    state.camera=new Camera(video,{onFrame:async()=>{await fm.send({image:video});},width:640,height:480});
-    await state.camera.start();
-    state.cameraOn=true;document.getElementById("trackingBtn").textContent="顔トラッキング ON";document.getElementById("trackReadout").textContent="Tracking: 起動中";
-  }catch(e){alert("顔トラッキング開始失敗: "+e.message);}
-}
-function stopTracking(){
-  state.cameraOn=false;if(state.camera&&state.camera.stop)state.camera.stop();if(video.srcObject)video.srcObject.getTracks().forEach(t=>t.stop());
-  document.getElementById("trackingBtn").textContent="顔トラッキング OFF";document.getElementById("trackReadout").textContent="Tracking: OFF";
-}
-function onCameraResults(res){
-  if(!res.multiFaceLandmarks||!res.multiFaceLandmarks[0]){state.track.hasFace=false;document.getElementById("trackReadout").textContent="Tracking: 顔なし";return;}
-  const lm=res.multiFaceLandmarks[0],dist=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y);
-  const leftEyeOpen=dist(159,145)/(dist(33,133)+.0001),rightEyeOpen=dist(386,374)/(dist(263,362)+.0001),eyeOpen=(leftEyeOpen+rightEyeOpen)/2;
-  const mouthRatio=dist(13,14)/(dist(78,308)+.0001);
-  const nose=lm[1],left=lm[234],right=lm[454],centerX=(left.x+right.x)/2,faceW=Math.abs(right.x-left.x)+.0001;
-  const rawYaw=(nose.x-centerX)/faceW;
-  state.track.yaw=clamp(rawYaw*5.2*state.controls.yawBoost,-1,1);
-  state.track.mouth=clamp((mouthRatio-.045)*state.controls.mouthSensitivity,0,1);
-  state.track.blink=clamp((.185-eyeOpen)*state.controls.blinkSensitivity,0,1);
-  state.track.hasFace=true;document.getElementById("trackReadout").textContent="Tracking: ON / 顔あり";
-}
-
-function fitCanvas(){
-  const r=document.getElementById("stage").getBoundingClientRect();
-  // Important: use CSS-pixel canvas coordinates so triangle affine transforms do not fight DPR transforms.
-  canvas.width=Math.max(1,Math.floor(r.width));
-  canvas.height=Math.max(1,Math.floor(r.height));
-  canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.imageSmoothingEnabled=true;
-}
-function fitObs(){
-  obsCanvas.width=Math.floor(innerWidth);
-  obsCanvas.height=Math.floor(innerHeight);
-  obsCtx.setTransform(1,0,0,1,0,0);
-  obsCtx.imageSmoothingEnabled=true;
-}
-function baseRect(w,h){if(!state.image)return{x:0,y:0,w:0,h:0};const s=Math.min(w/state.image.width,h/state.image.height)*.92;return{x:(w-state.image.width*s)/2,y:(h-state.image.height*s)/2,w:state.image.width*s,h:state.image.height*s};}
-function imageRect(w,h,editor){const r=baseRect(w,h);if(!editor)return r;const cx=w/2,cy=h/2;return{x:cx+(r.x-cx)*state.view.zoom+state.view.panX,y:cy+(r.y-cy)*state.view.zoom+state.view.panY,w:r.w*state.view.zoom,h:r.h*state.view.zoom};}
-function updateZoomUi(){document.getElementById("zoomVal").textContent=Math.round(state.view.zoom*100)+"%";document.getElementById("zoomRange").value=Math.round(state.view.zoom*100);}
-function placePoint(e){if(!state.image)return;const d=canvas.getBoundingClientRect(),r=imageRect(d.width,d.height,true);state.points[state.tool]={x:clamp((e.clientX-d.left-r.x)/r.w,0,1),y:clamp((e.clientY-d.top-r.y)/r.h,0,1)};}
-
-function draw(g,w,h,editor){
-  g.setTransform(1,0,0,1,0,0);
-  g.clearRect(0,0,w,h);
-  if(!state.image){
-    setDebugStatus("render","no image");
-    return;
-  }
-  g.imageSmoothingEnabled=true;
-  g.imageSmoothingQuality="high";
-  const r=imageRect(w,h,editor);
-
-  // Always draw base. Live2D is layered, not a single violently warped sheet.
-  g.save();
-  g.globalAlpha = 1.0;
-  g.drawImage(state.image,r.x,r.y,r.w,r.h);
-  g.restore();
-
-  if(state.controls.meshEnabled){
-    try{
-      g.save();
-      g.globalAlpha = Number(state.controls.meshOpacity ?? 0.82);
-      drawWarpedMesh(g,r);
-      g.restore();
-      setDebugStatus("mesh","OK");
-    }catch(err){
-      console.error("mesh render failed", err);
-      setDebugStatus("mesh","ERROR");
-    }
-  }else{
-    setDebugStatus("mesh","OFF");
-  }
-
-  if(state.controls.cutoutLayerMode && state.layers){
-    try{
-      drawCutoutLayers(g,r);
-    }catch(err){
-      console.error("cutout layer render failed", err);
-    }
-  }else if(state.controls.live2dLayerMode){
-    try{
-      drawLive2DLikeLayers(g,r);
-    }catch(err){
-      console.error("layer render failed", err);
-    }
-  }
-
-  setDebugStatus("render","OK");
-  if(editor && state.contours) drawContourOverlay(g,r);
-  if(editor && state.showSegmentation && state.segmentation) drawSegmentationOverlay(g,r);
-  if(state.debug&&editor&&state.controls.showGuideCircles)drawGuides(g,r);
-  if(editor&&state.controls.showPins)drawPoints(g,r);
-}
-
-
-
-function setMaskStatus(text,kind="good"){
-  const el=document.getElementById("maskStatus");
-  if(!el)return;
-  el.textContent=text;
-  el.className="hint "+kind;
-}
-
-function setPartsStatus(text,kind="good"){
-  const el=document.getElementById("partsStatus");
-  if(!el)return;
-  el.textContent=text;
-  el.className="hint "+kind;
-}
-
-
-function setSegStatus(text,kind="good"){
-  const el=document.getElementById("segStatus");
-  if(!el)return;
-  el.textContent=text;
-  el.className="hint "+kind;
-}
-
-
-function traceContoursOnly(){
-  ensureImageAndPoints();
-  state.contours = traceFeatureContours();
-  if(state.controls.autoRefinePoints) refinePointsFromContours();
-  applyContourMasksToLayers();
-  setPartsStatus("輪郭トレース完了。目/口ポイントも補正しました","good");
-  flashStage();
-}
-
-function oneClickContourRig(){
-  ensureImageAndPoints();
-  state.contours = traceFeatureContours();
-  if(state.controls.autoRefinePoints) refinePointsFromContours();
-  applyContourMasksToLayers();
-  generatePartsFromContourLayers();
-  applyGeneratedPartsRigSafe();
-  ensureMotionVisibleDefaults();
-  setPartsStatus("輪郭トレース→パーツ生成→リグ適用まで実行しました","good");
-  flashStage();
-}
-
-function traceFeatureContours(){
-  const src=document.createElement("canvas");
-  src.width=state.image.width; src.height=state.image.height;
-  const g=src.getContext("2d");
-  g.drawImage(state.image,0,0);
-  const img=g.getImageData(0,0,src.width,src.height);
-  const p=normPoints();
-  const contours={
-    mouth:traceOneFeature(img,p.mouth.x,p.mouth.y,"mouth"),
-    leftEye:traceOneFeature(img,p.leftEye.x,p.leftEye.y,"eye"),
-    rightEye:traceOneFeature(img,p.rightEye.x,p.rightEye.y,"eye")
-  };
-  return contours;
-}
-
-function traceOneFeature(img,nx,ny,type){
-  const w=img.width,h=img.height,d=img.data;
-  const scale=type==="mouth" ? Number(state.controls.mouthSearchScale||0.95) : Number(state.controls.eyeSearchScale||0.90);
-  const boxW=Math.round((type==="mouth"?0.16:0.13)*w*scale);
-  const boxH=Math.round((type==="mouth"?0.09:0.075)*h*scale);
-  const cx=Math.round(nx*w),cy=Math.round(ny*h);
-  const x0=clamp(cx-boxW,0,w-1)|0,x1=clamp(cx+boxW,0,w-1)|0;
-  const y0=clamp(cy-boxH,0,h-1)|0,y1=clamp(cy+boxH,0,h-1)|0;
-  const darkSens=Number(state.controls.lineDarkSensitivity||2.2);
-
+function traceFeature(pt,type){
+  const img=projectState.original;
+  const temp=toCanvas(img);
+  const g=temp.getContext("2d");
+  const data=g.getImageData(0,0,temp.width,temp.height).data;
+  const w=temp.width,h=temp.height;
+  const scale=type==="mouth"?projectState.rig.mouthSearchScale:projectState.rig.eyeSearchScale;
+  const bw=(type==="mouth"?0.16:0.13)*w*scale,bh=(type==="mouth"?0.09:0.075)*h*scale;
+  const cx=pt.x*w,cy=pt.y*h,sens=projectState.rig.lineDarkSensitivity;
   let pts=[];
-  for(let y=y0+1;y<y1-1;y++){
-    for(let x=x0+1;x<x1-1;x++){
+  for(let y=Math.max(1,cy-bh)|0;y<Math.min(h-1,cy+bh);y++){
+    for(let x=Math.max(1,cx-bw)|0;x<Math.min(w-1,cx+bw);x++){
       const i=(y*w+x)*4;
-      if(d[i+3]<10)continue;
-      const L=luma(d[i],d[i+1],d[i+2]);
-      const Lx1=luma(d[i-4],d[i-3],d[i-2]);
-      const Lx2=luma(d[i+4],d[i+5],d[i+6]);
-      const Ly1=luma(d[i-w*4],d[i-w*4+1],d[i-w*4+2]);
-      const Ly2=luma(d[i+w*4],d[i+w*4+1],d[i+w*4+2]);
-      const edge=Math.abs(Lx2-Lx1)+Math.abs(Ly2-Ly1);
-      const dark=clamp((130-L)/(80/darkSens),0,1);
-      const edgeScore=clamp(edge/(55/darkSens),0,1);
-      const ex=(x-cx)/boxW,ey=(y-cy)/boxH;
-      const local=clamp(1-Math.sqrt(ex*ex+ey*ey),0,1);
-      const score=(dark*0.58+edgeScore*0.42)*local;
-      if(score>0.34){
-        pts.push({x,y,score});
-      }
+      if(data[i+3]<10)continue;
+      const L=luma(data[i],data[i+1],data[i+2]);
+      const edge=Math.abs(luma(data[i+4],data[i+5],data[i+6])-luma(data[i-4],data[i-3],data[i-2]))+Math.abs(luma(data[i+w*4],data[i+w*4+1],data[i+w*4+2])-luma(data[i-w*4],data[i-w*4+1],data[i-w*4+2]));
+      const local=clamp(1-Math.hypot((x-cx)/bw,(y-cy)/bh),0,1);
+      const score=(clamp((135-L)/(80/sens),0,1)*.55+clamp(edge/(55/sens),0,1)*.45)*local;
+      if(score>.34)pts.push({x,y,score});
     }
   }
-
-  // Keep the densest/local line cluster by bounding around weighted center.
-  if(pts.length<12){
-    return fallbackContour(cx,cy,boxW*.45,boxH*.35,type);
-  }
+  if(pts.length<10)return fallbackContour(cx,cy,bw*.35,bh*.35,type);
   let sx=0,sy=0,sw=0;
   pts.forEach(p=>{sx+=p.x*p.score;sy+=p.y*p.score;sw+=p.score;});
-  const ccx=sx/sw, ccy=sy/sw;
-
-  const radius=Math.max(8,Number(state.controls.lineConnect||6));
-  pts=pts.filter(p=>Math.hypot(p.x-ccx,p.y-ccy)<Math.max(boxW,boxH)*0.72);
-
-  if(pts.length<12){
-    return fallbackContour(cx,cy,boxW*.45,boxH*.35,type);
-  }
-
-  // Convert edge cloud to polar contour: for each angle keep farthest strong point.
-  const bins=72;
-  const binPts=new Array(bins).fill(0).map(()=>null);
+  const ccx=sx/sw,ccy=sy/sw;
+  const bins=72, arr=new Array(bins).fill(0).map(()=>null);
   pts.forEach(p=>{
-    const ang=Math.atan2(p.y-ccy,p.x-ccx);
-    let b=Math.floor(((ang+Math.PI)/(Math.PI*2))*bins);
-    b=clamp(b,0,bins-1)|0;
-    const dist=Math.hypot(p.x-ccx,p.y-ccy);
-    if(!binPts[b] || dist>binPts[b].dist) binPts[b]={x:p.x,y:p.y,dist,score:p.score};
+    const a=Math.atan2(p.y-ccy,p.x-ccx);
+    const b=clamp(Math.floor(((a+Math.PI)/(Math.PI*2))*bins),0,bins-1)|0;
+    const d=Math.hypot(p.x-ccx,p.y-ccy);
+    if(!arr[b]||d>arr[b].d)arr[b]={x:p.x,y:p.y,d};
   });
-
-  let contour=[];
+  let points=[];
   for(let i=0;i<bins;i++){
-    let p=binPts[i];
-    if(!p){
-      // interpolate from nearest neighbors
-      let l=null,r=null;
-      for(let k=1;k<bins;k++){
-        if(!l && binPts[(i-k+bins)%bins]) l=binPts[(i-k+bins)%bins];
-        if(!r && binPts[(i+k)%bins]) r=binPts[(i+k)%bins];
-        if(l&&r)break;
-      }
-      if(l&&r)p={x:(l.x+r.x)/2,y:(l.y+r.y)/2,dist:(l.dist+r.dist)/2,score:.5};
+    if(arr[i])points.push({x:arr[i].x,y:arr[i].y});
+    else{
+      const a=i/bins*Math.PI*2;
+      points.push({x:ccx+Math.cos(a)*bw*.25,y:ccy+Math.sin(a)*bh*.25});
     }
-    if(p)contour.push({x:p.x,y:p.y});
   }
-
-  contour=smoothContour(contour,2);
-  return {type,cx:ccx,cy:ccy,points:contour,raw:pts};
+  points=smoothContour(points,2);
+  projectState.points[type==="mouth"?"mouth":(pt===projectState.points.leftEye?"leftEye":"rightEye")]={x:ccx/w,y:ccy/h};
+  return{type,cx:ccx,cy:ccy,points};
 }
 
 function fallbackContour(cx,cy,rx,ry,type){
-  const pts=[];
-  const n=64;
-  for(let i=0;i<n;i++){
-    const a=i/n*Math.PI*2;
-    pts.push({x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry});
-  }
-  return {type,cx,cy,points:pts,raw:[]};
+  const points=[];
+  for(let i=0;i<72;i++){const a=i/72*Math.PI*2;points.push({x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry});}
+  return{type,cx,cy,points};
 }
-
 function smoothContour(points,passes){
-  let pts=points.slice();
-  for(let p=0;p<passes;p++){
-    pts=pts.map((pt,i)=>{
-      const a=pts[(i-1+pts.length)%pts.length];
-      const b=pts[(i+1)%pts.length];
-      return {x:(a.x+pt.x*2+b.x)/4,y:(a.y+pt.y*2+b.y)/4};
-    });
-  }
+  let pts=points;
+  for(let p=0;p<passes;p++)pts=pts.map((pt,i)=>{const a=pts[(i-1+pts.length)%pts.length],b=pts[(i+1)%pts.length];return{x:(a.x+pt.x*2+b.x)/4,y:(a.y+pt.y*2+b.y)/4};});
   return pts;
 }
 
-function contourToMask(contour,w,h,grow=3){
-  const mask=createMask(w,h);
-  const g=mask.getContext("2d");
-  g.save();
-  g.fillStyle="#fff";
-  g.beginPath();
-  contour.points.forEach((p,i)=>{if(i===0)g.moveTo(p.x,p.y);else g.lineTo(p.x,p.y);});
-  g.closePath();
-  g.fill();
-  if(grow>0){
-    g.lineJoin="round";
-    g.lineCap="round";
-    g.strokeStyle="#fff";
-    g.lineWidth=grow*2;
-    g.stroke();
-  }
-  g.restore();
-  return mask;
-}
-
-function refinePointsFromContours(){
-  if(!state.contours)return;
-  const w=state.image.width,h=state.image.height;
-  const upd=(key,c)=>{
-    if(!c)return;
-    state.points[key]={x:clamp(c.cx/w,0,1),y:clamp(c.cy/h,0,1)};
+function generateParts(){
+  if(!projectState.original)return;
+  traceContours();
+  const img=projectState.original,w=img.width,h=img.height,src=toCanvas(img);
+  const masks={};
+  masks.face=createMask(w,h);drawEllipseMask(masks.face,projectState.points.face.x*w,(projectState.points.face.y+.05)*h,.22*w,.25*h);
+  masks.hair=createMask(w,h);drawEllipseMask(masks.hair,projectState.points.hair.x*w,(projectState.points.hair.y+.10)*h,.30*w,.24*h);
+  masks.neck=createMask(w,h);drawEllipseMask(masks.neck,projectState.points.neck.x*w,projectState.points.neck.y*h,.10*w,.08*h);
+  masks.mouth=contourToMask(projectState.contours.mouth,w,h,projectState.rig.lineConnect);
+  masks.leftEye=contourToMask(projectState.contours.leftEye,w,h,projectState.rig.lineConnect);
+  masks.rightEye=contourToMask(projectState.contours.rightEye,w,h,projectState.rig.lineConnect);
+  projectState.masks=masks;
+  projectState.inpainted=inpaint(src,[masks.face,masks.hair,masks.leftEye,masks.rightEye,masks.mouth,masks.neck]);
+  projectState.parts={
+    base_inpainted:projectState.inpainted,
+    original:src,
+    face:cutLayer(src,masks.face),
+    front_hair:cutLayer(src,masks.hair),
+    left_eye:cutLayer(src,masks.leftEye),
+    right_eye:cutLayer(src,masks.rightEye),
+    mouth:cutLayer(src,masks.mouth),
+    neck:cutLayer(src,masks.neck)
   };
-  upd("mouth",state.contours.mouth);
-  upd("leftEye",state.contours.leftEye);
-  upd("rightEye",state.contours.rightEye);
-}
-
-function applyContourMasksToLayers(){
-  if(!state.image||!state.contours)return;
-  const w=state.image.width,h=state.image.height;
-  const src=document.createElement("canvas");
-  src.width=w;src.height=h;
-  src.getContext("2d").drawImage(state.image,0,0);
-
-  const p=normPoints();
-  const faceMask=createMask(w,h);
-  const hairMask=createMask(w,h);
-  const neckMask=createMask(w,h);
-  drawEllipseMask(faceMask,p.face.x*w,(p.face.y+0.05)*h,0.22*w,0.25*h);
-  drawEllipseMask(hairMask,p.hair.x*w,(p.hair.y+0.10)*h,0.30*w,0.24*h);
-  drawEllipseMask(neckMask,p.neck.x*w,p.neck.y*h,0.10*w,0.08*h);
-
-  const mouthMask=contourToMask(state.contours.mouth,w,h,Number(state.controls.lineConnect||6));
-  const leftEyeMask=contourToMask(state.contours.leftEye,w,h,Number(state.controls.lineConnect||6));
-  const rightEyeMask=contourToMask(state.contours.rightEye,w,h,Number(state.controls.lineConnect||6));
-
-  const inpainted=inpaintByAverageColors(src,[faceMask,hairMask,leftEyeMask,rightEyeMask,mouthMask,neckMask]);
-
-  state.layers={
-    base:src,
-    inpainted,
-    masks:{face:faceMask,hair:hairMask,leftEye:leftEyeMask,rightEye:rightEyeMask,mouth:mouthMask,neck:neckMask},
-    faceLayer:cutLayer(src,faceMask),
-    hairLayer:cutLayer(src,hairMask),
-    leftEyeLayer:cutLayer(src,leftEyeMask),
-    rightEyeLayer:cutLayer(src,rightEyeMask),
-    mouthLayer:cutLayer(src,mouthMask),
-    neckLayer:cutLayer(src,neckMask),
-    width:w,
-    height:h
-  };
-}
-
-function generatePartsFromContourLayers(){
-  if(!state.layers) applyContourMasksToLayers();
-  const L=state.layers;
-  if(!L)return;
-  const src=L.base;
-  state.parts={
-    original:cloneCanvas(src),
-    base_inpainted:cloneCanvas(L.inpainted),
-    face:cloneCanvas(L.faceLayer),
-    front_hair:cloneCanvas(L.hairLayer),
-    left_eye:cloneCanvas(L.leftEyeLayer),
-    right_eye:cloneCanvas(L.rightEyeLayer),
-    mouth:cloneCanvas(L.mouthLayer),
-    neck:cloneCanvas(L.neckLayer),
-    contour_mouth:maskToPreview(L.masks.mouth,"rgba(255,90,120,.95)"),
-    contour_left_eye:maskToPreview(L.masks.leftEye,"rgba(100,180,255,.95)"),
-    contour_right_eye:maskToPreview(L.masks.rightEye,"rgba(100,180,255,.95)")
-  };
-  state.partsPreviewOpen=true;
   renderPartsPreview();
 }
 
-function generateLocalSegmentation(){
-  if(!state.image){
-    setSegStatus("画像がありません","bad");
-    return;
-  }
-  try{
-    const p=normPoints();
-    const src=document.createElement("canvas");
-    src.width=state.image.width; src.height=state.image.height;
-    const g=src.getContext("2d");
-    g.drawImage(state.image,0,0);
-    const img=g.getImageData(0,0,src.width,src.height);
-    const w=src.width,h=src.height,d=img.data;
-
-    const samples=sampleSemanticColors(img,w,h,p);
-    const masks={
-      skin:createMask(w,h),
-      hair:createMask(w,h),
-      eye:createMask(w,h),
-      mouth:createMask(w,h),
-      cloth:createMask(w,h),
-      alpha:createMask(w,h)
-    };
-    const md={};
-    Object.keys(masks).forEach(k=>md[k]=masks[k].getContext("2d").createImageData(w,h));
-
-    const skinTol=Number(state.controls.skinTolerance||76);
-    const hairTol=Number(state.controls.hairTolerance||98);
-    const mouthBoost=Number(state.controls.mouthRedBoost||1.6);
-
-    for(let y=0;y<h;y++){
-      for(let x=0;x<w;x++){
-        const i=(y*w+x)*4;
-        const a=d[i+3];
-        if(a<8)continue;
-        const r=d[i],gg=d[i+1],b=d[i+2];
-        const hsv=rgbToHsv(r,gg,b);
-        const lum=luma(r,gg,b);
-
-        const nx=x/w, ny=y/h;
-        const faceDist=distNorm(nx,ny,p.face.x,p.face.y,0.30,0.34);
-        const hairDist=distNorm(nx,ny,p.hair.x,p.hair.y+0.10,0.42,0.34);
-        const mouthDist=distNorm(nx,ny,p.mouth.x,p.mouth.y,0.14,0.09);
-        const leftEyeDist=distNorm(nx,ny,p.leftEye.x,p.leftEye.y,0.11,0.075);
-        const rightEyeDist=distNorm(nx,ny,p.rightEye.x,p.rightEye.y,0.11,0.075);
-        const eyeDist=Math.min(leftEyeDist,rightEyeDist);
-        const bodyZone=ny>p.neck.y-0.02;
-
-        const skinScore=(1-clamp(colorDist(r,gg,b,samples.skin.r,samples.skin.g,samples.skin.b)/skinTol,0,1))*(1-faceDist*0.35);
-        const hairScore=(1-clamp(colorDist(r,gg,b,samples.hair.r,samples.hair.g,samples.hair.b)/hairTol,0,1))*(1-hairDist*0.20);
-        const mouthScore=(clamp((r-gg+28)/95,0,1)*0.45 + clamp((r-b+18)/95,0,1)*0.35 + clamp((130-lum)/100,0,1)*0.20) * (1-mouthDist) * mouthBoost;
-        const eyeScore=(clamp((b-r+55)/150,0,1)*0.25 + clamp((Math.max(r,gg,b)-Math.min(r,gg,b))/90,0,1)*0.35 + clamp((170-lum)/140,0,1)*0.25 + clamp((lum-150)/120,0,1)*0.15) * (1-eyeDist);
-        const clothScore=(bodyZone?1:0.2) * (clamp((130-lum)/120,0,1)*0.6 + clamp((Math.max(r,gg,b)-Math.min(r,gg,b))/120,0,1)*0.2);
-
-        let best="alpha", score=0.05;
-        const cand=[["skin",skinScore],["hair",hairScore],["mouth",mouthScore],["eye",eyeScore],["cloth",clothScore]];
-        for(const [k,s] of cand){
-          if(s>score){best=k;score=s;}
-        }
-        // Restrict small parts hard to local zones.
-        if(best==="mouth" && mouthDist>0.95) best= skinScore>hairScore ? "skin":"hair";
-        if(best==="eye" && eyeDist>0.95) best= skinScore>hairScore ? "skin":"hair";
-        if(best==="skin" && hairDist<0.72 && lum<120) best="hair";
-        if(best==="hair" && bodyZone && clothScore>hairScore*0.8) best="cloth";
-
-        const out=md[best].data;
-        out[i]=255;out[i+1]=255;out[i+2]=255;out[i+3]=Math.round(255*clamp(score,0.25,1));
-        const all=md.alpha.data;
-        all[i]=255;all[i+1]=255;all[i+2]=255;all[i+3]=255;
-      }
-    }
-    for(const k of Object.keys(masks)){
-      const ctx=masks[k].getContext("2d");
-      ctx.putImageData(md[k],0,0);
-      if(k!=="alpha") postProcessSemanticMask(masks[k],Number(state.controls.segSmooth||6));
-    }
-
-    state.segmentation={src,samples,masks,width:w,height:h};
-    state.showSegmentation=true;
-    document.getElementById("segDebugBtn").textContent="分類表示 ON";
-    setSegStatus("ローカル色分類セグメント生成OK","good");
-    renderPartsPreview();
-  }catch(err){
-    console.error(err);
-    setSegStatus("色分類エラー: "+err.message,"bad");
-  }
+function toCanvas(img){
+  const c=document.createElement("canvas");c.width=img.width;c.height=img.height;c.getContext("2d").drawImage(img,0,0);return c;
 }
-
-function sampleSemanticColors(img,w,h,p){
-  const d=img.data;
-  const sampleEllipse=(cx,cy,rx,ry,filter)=>{
-    let r=0,g=0,b=0,cnt=0;
-    const x0=Math.max(0,Math.floor((cx-rx)*w)),x1=Math.min(w-1,Math.ceil((cx+rx)*w));
-    const y0=Math.max(0,Math.floor((cy-ry)*h)),y1=Math.min(h-1,Math.ceil((cy+ry)*h));
-    for(let y=y0;y<=y1;y+=3){
-      for(let x=x0;x<=x1;x+=3){
-        const nx=x/w,ny=y/h;
-        const ex=(nx-cx)/rx,ey=(ny-cy)/ry;
-        if(ex*ex+ey*ey>1)continue;
-        const i=(y*w+x)*4;
-        if(d[i+3]<8)continue;
-        
-      }
-    }
-  };
-  const collect=(cx,cy,rx,ry,filter)=>{
-    let ar=[];
-    const x0=Math.max(0,Math.floor((cx-rx)*w)),x1=Math.min(w-1,Math.ceil((cx+rx)*w));
-    const y0=Math.max(0,Math.floor((cy-ry)*h)),y1=Math.min(h-1,Math.ceil((cy+ry)*h));
-    for(let y=y0;y<=y1;y+=3){
-      for(let x=x0;x<=x1;x+=3){
-        const nx=x/w,ny=y/h;
-        const ex=(nx-cx)/rx,ey=(ny-cy)/ry;
-        if(ex*ex+ey*ey>1)continue;
-        const i=(y*w+x)*4;
-        if(d[i+3]<8)continue;
-        const col={r:d[i],g:d[i+1],b:d[i+2],l:luma(d[i],d[i+1],d[i+2])};
-        if(!filter || filter(col)) ar.push(col);
-      }
-    }
-    if(!ar.length)return{r:180,g:150,b:150};
-    ar.sort((a,b)=>a.l-b.l);
-    const mid=ar.slice(Math.floor(ar.length*.25),Math.ceil(ar.length*.75));
-    const sum=mid.reduce((s,c)=>({r:s.r+c.r,g:s.g+c.g,b:s.b+c.b}),{r:0,g:0,b:0});
-    return{r:sum.r/mid.length,g:sum.g/mid.length,b:sum.b/mid.length};
-  };
-  return{
-    skin:collect(p.face.x,p.face.y+0.08,0.13,0.16,c=>c.l>115),
-    hair:collect(p.hair.x,p.hair.y+0.08,0.24,0.18,c=>c.l<150),
-    mouth:collect(p.mouth.x,p.mouth.y,0.08,0.05,c=>c.r>c.g*0.8),
-    eye:collect(p.leftEye.x,p.leftEye.y,0.08,0.05,c=>true)
-  };
-}
-
-function postProcessSemanticMask(mask,blur){
-  const g=mask.getContext("2d");
-  const tmp=createMask(mask.width,mask.height);
-  const tg=tmp.getContext("2d");
-  tg.filter=`blur(${Math.max(1,blur)}px)`;
-  tg.drawImage(mask,0,0);
-  tg.filter="none";
-  tg.globalCompositeOperation="source-in";
-  tg.fillStyle="#fff";
-  tg.fillRect(0,0,mask.width,mask.height);
-  g.clearRect(0,0,mask.width,mask.height);
-  g.drawImage(tmp,0,0);
-}
-
-function distNorm(x,y,cx,cy,rx,ry){
-  return clamp(Math.sqrt(((x-cx)/rx)**2+((y-cy)/ry)**2),0,1.5);
-}
-function rgbToHsv(r,g,b){
-  r/=255;g/=255;b/=255;
-  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
-  let h=0;
-  if(d!==0){
-    if(max===r)h=((g-b)/d)%6;
-    else if(max===g)h=(b-r)/d+2;
-    else h=(r-g)/d+4;
-    h*=60;if(h<0)h+=360;
-  }
-  return{h,s:max===0?0:d/max,v:max};
-}
-
-function generatePartsFromSegmentation(){
-  if(!state.segmentation) generateLocalSegmentation();
-  if(!state.segmentation){
-    setSegStatus("分類がありません","bad");
-    return;
-  }
-  const S=state.segmentation;
-  const src=S.src;
-  const M=S.masks;
-  const p=normPoints();
-
-  // Build better semantic parts from masks.
-  const faceMask=combineMasks([M.skin],src.width,src.height);
-  const hairMask=combineMasks([M.hair],src.width,src.height);
-  const eyeMask=combineMasks([M.eye],src.width,src.height);
-  const mouthMask=combineMasks([M.mouth],src.width,src.height);
-  const bodyMask=combineMasks([M.cloth],src.width,src.height);
-
-  const leftEyeMask=localizeMask(eyeMask,p.leftEye.x,p.leftEye.y,0.13,0.09);
-  const rightEyeMask=localizeMask(eyeMask,p.rightEye.x,p.rightEye.y,0.13,0.09);
-  const mouthLocalMask=localizeMask(mouthMask,p.mouth.x,p.mouth.y,0.14,0.09);
-  const frontHairMask=localizeMask(hairMask,p.hair.x,p.hair.y+0.08,0.34,0.25);
-  const backHairMask=excludeMask(hairMask,faceMask,0.35);
-
-  const inpainted=inpaintByAverageColors(src,[faceMask,frontHairMask,leftEyeMask,rightEyeMask,mouthLocalMask]);
-
-  state.parts={
-    original:cloneCanvas(src),
-    base_inpainted:inpainted,
-    face:cutLayer(src,faceMask),
-    front_hair:cutLayer(src,frontHairMask),
-    back_hair:cutLayer(src,backHairMask),
-    left_eye:cutLayer(src,leftEyeMask),
-    right_eye:cutLayer(src,rightEyeMask),
-    mouth:cutLayer(src,mouthLocalMask),
-    body:cutLayer(src,bodyMask),
-    skin_mask:maskToPreview(faceMask,"rgba(255,190,170,.95)"),
-    hair_mask:maskToPreview(hairMask,"rgba(70,45,95,.95)"),
-    eye_mask:maskToPreview(eyeMask,"rgba(150,100,255,.95)"),
-    mouth_mask:maskToPreview(mouthLocalMask,"rgba(255,90,120,.95)")
-  };
-
-  // Also update live layers with semantic masks.
-  state.layers={
-    base:src,
-    inpainted,
-    masks:{face:faceMask,hair:frontHairMask,leftEye:leftEyeMask,rightEye:rightEyeMask,mouth:mouthLocalMask,neck:createMask(src.width,src.height)},
-    faceLayer:cutLayer(src,faceMask),
-    hairLayer:cutLayer(src,frontHairMask),
-    leftEyeLayer:cutLayer(src,leftEyeMask),
-    rightEyeLayer:cutLayer(src,rightEyeMask),
-    mouthLayer:cutLayer(src,mouthLocalMask),
-    neckLayer:makeBodyPart(src,p),
-    width:src.width,
-    height:src.height
-  };
-
-  state.partsPreviewOpen=true;
-  renderPartsPreview();
-  setSegStatus("分類からパーツ生成OK","good");
-}
-
-function combineMasks(masks,w,h){
-  const c=createMask(w,h);
-  const g=c.getContext("2d");
-  g.fillStyle="#000";
-  masks.forEach(m=>g.drawImage(m,0,0));
-  return c;
-}
-function localizeMask(mask,cx,cy,rx,ry){
-  const c=cloneCanvas(mask);
-  const clip=createMask(mask.width,mask.height);
-  drawEllipseMask(clip,cx*mask.width,cy*mask.height,rx*mask.width,ry*mask.height);
-  const g=c.getContext("2d");
-  g.globalCompositeOperation="destination-in";
-  g.drawImage(clip,0,0);
-  g.globalCompositeOperation="source-over";
-  return c;
-}
-function excludeMask(mask,exclude,alpha=1){
-  const c=cloneCanvas(mask);
-  const g=c.getContext("2d");
-  g.globalCompositeOperation="destination-out";
-  g.globalAlpha=alpha;
-  g.drawImage(exclude,0,0);
-  g.globalAlpha=1;
-  g.globalCompositeOperation="source-over";
-  return c;
-}
-function maskToPreview(mask,color){
-  const c=createMask(mask.width,mask.height);
-  const g=c.getContext("2d");
-  g.fillStyle=color;
-  g.fillRect(0,0,c.width,c.height);
-  g.globalCompositeOperation="destination-in";
-  g.drawImage(mask,0,0);
-  return c;
-}
-
-function downloadSegmentationPNGs(){
-  if(!state.segmentation){
-    setSegStatus("先に色分類セグメント生成を押してください","warn");
-    return;
-  }
-  const items=Object.entries(state.segmentation.masks).map(([name,mask])=>[name,maskToPreview(mask,"rgba(255,255,255,1)")]);
-  items.forEach(([name,canvas],i)=>{
-    setTimeout(()=>{
-      const a=document.createElement("a");
-      a.href=canvas.toDataURL("image/png");
-      a.download=`livepic_seg_${name}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    },i*140);
+function createMask(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;return c;}
+function drawEllipseMask(mask,cx,cy,rx,ry){const g=mask.getContext("2d");g.fillStyle="#fff";g.beginPath();g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);g.fill();}
+function contourToMask(contour,w,h,grow=4){const c=createMask(w,h),g=c.getContext("2d");g.fillStyle="#fff";g.beginPath();contour.points.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));g.closePath();g.fill();g.lineWidth=grow*2;g.strokeStyle="#fff";g.stroke();return c;}
+function cutLayer(src,mask){const c=createMask(src.width,src.height),g=c.getContext("2d");g.drawImage(src,0,0);g.globalCompositeOperation="destination-in";g.drawImage(mask,0,0);g.globalCompositeOperation="source-over";return c;}
+function inpaint(src,masks){
+  const c=toCanvas(src),g=c.getContext("2d"),img=g.getImageData(0,0,c.width,c.height),d=img.data,w=c.width,h=c.height,str=projectState.rig.inpaintStrength;
+  masks.forEach(mask=>{
+    const md=mask.getContext("2d").getImageData(0,0,w,h).data;
+    let minX=w,minY=h,maxX=0,maxY=0;
+    for(let y=0;y<h;y+=2)for(let x=0;x<w;x+=2)if(md[(y*w+x)*4+3]>10){minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}
+    minX=Math.max(0,minX-24);minY=Math.max(0,minY-24);maxX=Math.min(w-1,maxX+24);maxY=Math.min(h-1,maxY+24);
+    let r=0,gg=0,b=0,n=0;
+    for(let y=minY;y<=maxY;y+=3)for(let x=minX;x<=maxX;x+=3){const i=(y*w+x)*4;if(md[i+3]<10&&d[i+3]>10){r+=d[i];gg+=d[i+1];b+=d[i+2];n++;}}
+    if(!n)return;r/=n;gg/=n;b/=n;
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){const i=(y*w+x)*4,a=md[i+3]/255*str;if(a>0){d[i]=d[i]*(1-a)+r*a;d[i+1]=d[i+1]*(1-a)+gg*a;d[i+2]=d[i+2]*(1-a)+b*a;d[i+3]=255;}}
   });
-  setSegStatus("分類PNG保存を開始しました","good");
-}
-
-function generateAutoParts(){
-  if(state.controls.segmentationMode){
-    generateLocalSegmentation();
-    generatePartsFromSegmentation();
-    return;
-  }
-  if(!state.image){
-    setPartsStatus("画像がありません","bad");
-    return;
-  }
-  try{
-    // First build masks/layers using current detection settings.
-    buildAutoMasksAndLayers(false);
-    const L=state.layers;
-    if(!L){
-      setPartsStatus("レイヤー生成に失敗しました","bad");
-      return;
-    }
-    const p=normPoints();
-    const w=state.image.width, h=state.image.height;
-    const src=document.createElement("canvas");
-    src.width=w; src.height=h;
-    src.getContext("2d").drawImage(state.image,0,0);
-
-    const masks=L.masks;
-    const parts={
-      base_inpainted: cloneCanvas(L.inpainted),
-      original: cloneCanvas(src),
-      face: cutLayer(src,masks.face),
-      front_hair: cutLayer(src,masks.hair),
-      back_hair: makeBackHairPart(src,masks.hair,masks.face),
-      left_eye: cutLayer(src,masks.leftEye),
-      right_eye: cutLayer(src,masks.rightEye),
-      mouth: cutLayer(src,masks.mouth),
-      neck: cutLayer(src,masks.neck),
-      body: makeBodyPart(src,p),
-      combined_preview: makePartsCombinedPreview(src,L)
-    };
-
-    state.parts=parts;
-    state.partsPreviewOpen=true;
-    renderPartsPreview();
-    setPartsStatus("自動パーツ分けPNGを生成しました","good");
-  }catch(err){
-    console.error(err);
-    setPartsStatus("自動パーツ分けエラー: "+err.message,"bad");
-  }
-}
-
-function cloneCanvas(src){
-  const c=document.createElement("canvas");
-  c.width=src.width;c.height=src.height;
-  c.getContext("2d").drawImage(src,0,0);
-  return c;
-}
-
-function makeBackHairPart(src,hairMask,faceMask){
-  const c=cutLayer(src,hairMask);
-  // remove face-ish area from back hair to separate front face from surrounding hair
-  const g=c.getContext("2d");
-  g.globalCompositeOperation="destination-out";
-  g.globalAlpha=0.55;
-  g.drawImage(faceMask,0,0);
-  g.globalAlpha=1;
-  g.globalCompositeOperation="source-over";
-  return c;
-}
-
-function makeBodyPart(src,p){
-  const c=document.createElement("canvas");
-  c.width=src.width;c.height=src.height;
-  const mask=createMask(src.width,src.height);
-  const g=mask.getContext("2d");
-  g.fillStyle="#fff";
-  const y0=Math.max(0,(p.neck.y-0.02)*src.height);
-  g.fillRect(0,y0,src.width,src.height-y0);
-  return cutLayer(src,mask);
-}
-
-function makePartsCombinedPreview(src,L){
-  const c=document.createElement("canvas");
-  c.width=src.width;c.height=src.height;
-  const g=c.getContext("2d");
-  g.drawImage(L.inpainted,0,0);
-  g.drawImage(L.neckLayer,0,0);
-  g.drawImage(L.faceLayer,0,0);
-  g.drawImage(L.hairLayer,0,0);
-  g.drawImage(L.leftEyeLayer,0,0);
-  g.drawImage(L.rightEyeLayer,0,0);
-  g.drawImage(L.mouthLayer,0,0);
-  return c;
+  g.putImageData(img,0,0);return c;
 }
 
 function renderPartsPreview(){
-  const box=document.getElementById("partsPreview");
-  if(!box)return;
+  const box=document.getElementById("partsPreview");if(!box)return;
   box.innerHTML="";
-  if(!state.partsPreviewOpen || !state.parts)return;
-  Object.entries(state.parts).forEach(([name,canvas])=>{
-    const card=document.createElement("div");
-    card.className="part-card";
-    const img=document.createElement("img");
-    img.src=canvas.toDataURL("image/png");
-    const label=document.createElement("div");
-    label.textContent=name;
-    card.appendChild(img);
-    card.appendChild(label);
-    box.appendChild(card);
+  Object.entries(projectState.parts||{}).forEach(([name,canvas])=>{
+    const card=document.createElement("div");card.className="part-card";
+    const img=document.createElement("img");img.src=canvas.toDataURL("image/png");
+    const lab=document.createElement("div");lab.textContent=name;
+    card.append(img,lab);box.appendChild(card);
   });
 }
 
-function downloadGeneratedParts(){
-  if(!state.parts){
-    setPartsStatus("先に自動パーツ分け生成を押してください","warn");
-    return;
+function syncToLive(msg){setStatus("liveStatus",msg);updateProjectReadout();}
+function applyRigPreset(){Object.assign(projectState.rig,{headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,mouthLayerOpen:1.8,mouthLayerDrop:42,eyeLayerClose:1.75});updateControls();syncToLive("Rigプリセット適用");}
+function applyExpression(name){projectState.rig.eyeSmile=name==="smile"?.55:.10;updateControls();syncToLive(name==="smile"?"笑顔":"通常");}
+function testMouth(){runtime.manual.talking=1.8;runtime.manual.mouthUntil=performance.now()+projectState.rig.mouthHold*1000;runtime.smooth.mouth=1;}
+function testBlink(){runtime.manual.blinkBoost=1.6;runtime.manual.blinkUntil=performance.now()+projectState.rig.blinkHold*1000;runtime.smooth.blink=1;}
+function testMotion(){testMouth();testBlink();runtime.autoYaw=true;updateAutoYawButtons();}
+function resetMotion(){runtime.smooth={yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0};runtime.manual={talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0};runtime.autoYaw=false;updateAutoYawButtons();}
+function toggleAutoYaw(){runtime.autoYaw=!runtime.autoYaw;updateAutoYawButtons();}
+function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
+
+function drawAvatar(g,w,h,editor=false,mode="live"){
+  g.clearRect(0,0,w,h);
+  if(!projectState.original)return;
+  const r=imageRect(w,h,editor);
+  const parts=projectState.parts;
+  if(mode==="original"||!parts.base_inpainted){g.drawImage(projectState.original,r.x,r.y,r.w,r.h);}
+  else if(mode==="inpaint"){g.drawImage(projectState.inpainted,r.x,r.y,r.w,r.h);}
+  else if(mode==="parts"){drawPartsGrid(g,w,h);}
+  else{
+    const p=projectState.points, rig=projectState.rig, yaw=runtime.smooth.yaw, scale=r.w/projectState.original.width;
+    const headMove=runtime.smooth.headX*scale*rig.headBone, headY=runtime.smooth.headY*scale*.45;
+    const rot=yaw*rig.headRotate*Math.PI/180;
+    g.drawImage(parts.base_inpainted||projectState.original,r.x,r.y,r.w,r.h);
+    drawPart(g,parts.neck,p.neck,r, runtime.smooth.neckX*scale*rig.neckBone,0,rot*.1,1,1,.85);
+    drawPart(g,parts.face,p.face,r, headMove,headY,rot,1-Math.abs(yaw)*.01,1,1);
+    drawPart(g,parts.front_hair,p.hair,r, runtime.smooth.hairX*scale*rig.hairBone,headY*.2,rot*.25,1,1,.80);
+    const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.94);
+    drawEye(g,parts.left_eye,p.leftEye,r,headMove,headY,rot,blink);
+    drawEye(g,parts.right_eye,p.rightEye,r,headMove,headY,rot,blink);
+    drawMouth(g,parts.mouth,p.mouth,r,headMove,headY,rot,runtime.smooth.mouth);
+    drawSynthetic(g,r,p,headMove,headY,rot);
   }
-  Object.entries(state.parts).forEach(([name,canvas],i)=>{
-    setTimeout(()=>{
-      const a=document.createElement("a");
-      a.href=canvas.toDataURL("image/png");
-      a.download=`livepic_part_${name}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    },i*160);
-  });
-  setPartsStatus("パーツPNG保存を開始しました。ブラウザの複数DL許可が必要な場合があります","good");
+  if(editor&&runtime.showHelpers)drawHelpers(g,r);
 }
 
-function applyGeneratedPartsRig(){
-  if(!state.parts){
-    generateAutoParts();
-  }
-  Object.assign(state.controls,{
-    cutoutLayerMode:true,
-    live2dLayerMode:true,
-    boneRigMode:true,
-    safeDeform:true,
-    meshOpacity:0.45,
-    globalPower:0.42,
-    headBone:0.78,
-    neckBone:0.40,
-    bodyBone:0.12,
-    hairBone:0.70,
-    mouthLayerOpen:1.25,
-    mouthLayerDrop:26,
-    eyeLayerClose:1.25,
-    eyeLayerFollow:0.48,
-    mouthCloseSnap:0.72
-  });
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  updateLabels();
-  setPartsStatus("生成パーツ用のリグ設定を適用しました","good");
+function drawPart(g,img,pt,r,tx=0,ty=0,rot=0,sx=1,sy=1,a=1){
+  if(!img||!pt)return;
+  const cx=r.x+pt.x*r.w,cy=r.y+pt.y*r.h;
+  g.save();g.globalAlpha=a;g.translate(cx+tx,cy+ty);g.rotate(rot);g.scale(sx,sy);g.translate(-cx,-cy);g.drawImage(img,r.x,r.y,r.w,r.h);g.restore();
 }
-
-
-function hideAllGuides(){
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  state.controls.showPins=false;
-  state.controls.showGuideCircles=false;
-  state.controls.showMaskOverlay=false;
-  const a=document.getElementById("toggleMaskViewBtn"); if(a) a.textContent="マスク表示 OFF";
-  const b=document.getElementById("togglePinsBtn"); if(b) b.textContent="ピン表示 OFF";
-  const c=document.getElementById("meshLineBtn"); if(c) c.textContent="メッシュ線 OFF";
-  setMaskStatus("補助表示を全部OFFにしました","warn");
-  updateLabels();
-}
-
-function buildAutoMasksAndLayers(showAlert=true){
-  if(!state.image){
-    setMaskStatus("画像がありません","bad");
-    return;
-  }
-  try{
-    const p=normPoints();
-    const iw=state.image.width, ih=state.image.height;
-    const temp=document.createElement("canvas");
-    temp.width=iw; temp.height=ih;
-    const tg=temp.getContext("2d");
-    tg.drawImage(state.image,0,0);
-
-    const masks={
-      face:createMask(iw,ih),
-      hair:createMask(iw,ih),
-      leftEye:createMask(iw,ih),
-      rightEye:createMask(iw,ih),
-      mouth:createMask(iw,ih),
-      neck:createMask(iw,ih)
-    };
-
-    // Broad layer masks. These are intentionally wider than visible parts.
-    drawEllipseMask(masks.face,p.face.x*iw,(p.face.y+0.05)*ih,0.25*iw,0.28*ih);
-    drawEllipseMask(masks.hair,p.hair.x*iw,(p.hair.y+0.10)*ih,0.31*iw,0.26*ih);
-    drawEllipseMask(masks.neck,p.neck.x*iw,p.neck.y*ih,0.12*iw,0.09*ih);
-
-    if(state.controls.contourMaskMode){
-      const mouthMask=detectFeatureMask(temp,p.mouth.x,p.mouth.y,"mouth");
-      const leftEyeMask=detectFeatureMask(temp,p.leftEye.x,p.leftEye.y,"eye");
-      const rightEyeMask=detectFeatureMask(temp,p.rightEye.x,p.rightEye.y,"eye");
-      if(maskHasContent(mouthMask)) masks.mouth=mouthMask; else drawEllipseMask(masks.mouth,p.mouth.x*iw,p.mouth.y*ih,0.10*iw,0.065*ih);
-      if(maskHasContent(leftEyeMask)) masks.leftEye=leftEyeMask; else drawEllipseMask(masks.leftEye,p.leftEye.x*iw,p.leftEye.y*ih,0.075*iw,0.055*ih);
-      if(maskHasContent(rightEyeMask)) masks.rightEye=rightEyeMask; else drawEllipseMask(masks.rightEye,p.rightEye.x*iw,p.rightEye.y*ih,0.075*iw,0.055*ih);
-    }else{
-      drawEllipseMask(masks.leftEye,p.leftEye.x*iw,p.leftEye.y*ih,0.075*iw,0.055*ih);
-      drawEllipseMask(masks.rightEye,p.rightEye.x*iw,p.rightEye.y*ih,0.075*iw,0.055*ih);
-      drawEllipseMask(masks.mouth,p.mouth.x*iw,p.mouth.y*ih,0.10*iw,0.065*ih);
-    }
-
-    softenMask(masks.mouth, Number(state.controls.contourSmooth||6));
-    softenMask(masks.leftEye, Number(state.controls.contourSmooth||6));
-    softenMask(masks.rightEye, Number(state.controls.contourSmooth||6));
-
-    const faceLayer=cutLayer(temp,masks.face);
-    const hairLayer=cutLayer(temp,masks.hair);
-    const leftEyeLayer=cutLayer(temp,masks.leftEye);
-    const rightEyeLayer=cutLayer(temp,masks.rightEye);
-    const mouthLayer=cutLayer(temp,masks.mouth);
-    const neckLayer=cutLayer(temp,masks.neck);
-
-    const inpainted=inpaintByAverageColors(temp,[masks.face,masks.hair,masks.leftEye,masks.rightEye,masks.mouth,masks.neck]);
-
-    state.layers={base:temp,inpainted,masks,faceLayer,hairLayer,leftEyeLayer,rightEyeLayer,mouthLayer,neckLayer,width:iw,height:ih};
-    setMaskStatus("輪郭検出マスク＋穴埋めレイヤー生成OK","good");
-    if(showAlert) alert("輪郭検出マスク＋穴埋めレイヤーを生成しました");
-  }catch(err){
-    console.error(err);
-    setMaskStatus("マスク生成エラー: "+err.message,"bad");
-  }
-}
-
-function rebuildSpecificContour(kind){
-  if(!state.image){
-    setMaskStatus("画像がありません","bad");
-    return;
-  }
-  buildAutoMasksAndLayers(false);
-  setMaskStatus(kind==="mouth" ? "口輪郭を再検出しました" : "目輪郭を再検出しました","good");
-}
-
-function createMask(w,h){
-  const c=document.createElement("canvas");
-  c.width=w;c.height=h;
-  return c;
-}
-function drawEllipseMask(mask,cx,cy,rx,ry){
-  const g=mask.getContext("2d");
-  g.save();
-  g.fillStyle="#fff";
-  g.beginPath();
-  g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
-  g.fill();
-  g.restore();
-}
-
-function detectFeatureMask(src,nx,ny,type){
-  const w=src.width,h=src.height;
-  const mask=createMask(w,h);
-  const mg=mask.getContext("2d");
-  const sg=src.getContext("2d");
-  const img=sg.getImageData(0,0,w,h);
-  const data=img.data;
-
-  const cx=Math.round(nx*w), cy=Math.round(ny*h);
-  const boxW=Math.round((type==="mouth"?0.28:0.20)*w);
-  const boxH=Math.round((type==="mouth"?0.16:0.13)*h);
-  const x0=clamp(cx-boxW/2,0,w-1)|0, y0=clamp(cy-boxH/2,0,h-1)|0;
-  const x1=clamp(cx+boxW/2,0,w-1)|0, y1=clamp(cy+boxH/2,0,h-1)|0;
-
-  const sensitivity= type==="mouth" ? Number(state.controls.mouthEdgeSensitivity||1.8) : Number(state.controls.eyeEdgeSensitivity||1.7);
-  const grow=Number(state.controls.contourGrow||8);
-
-  // Sample background/skin around the feature box.
-  const bg=sampleRingColor(data,w,h,cx,cy,Math.max(boxW,boxH)*0.32,Math.max(boxW,boxH)*0.52);
-
-  const raw=createMask(w,h);
-  const rg=raw.getContext("2d");
-  const rawImg=rg.createImageData(w,h);
-  const rd=rawImg.data;
-
-  for(let y=y0+1;y<y1-1;y++){
-    for(let x=x0+1;x<x1-1;x++){
-      const idx=(y*w+x)*4;
-      const a=data[idx+3];
-      if(a<10)continue;
-      const lum=luma(data[idx],data[idx+1],data[idx+2]);
-      const lumL=luma(data[idx-4],data[idx-3],data[idx-2]);
-      const lumR=luma(data[idx+4],data[idx+5],data[idx+6]);
-      const lumU=luma(data[idx-w*4],data[idx-w*4+1],data[idx-w*4+2]);
-      const lumD=luma(data[idx+w*4],data[idx+w*4+1],data[idx+w*4+2]);
-      const edge=Math.abs(lumR-lumL)+Math.abs(lumD-lumU);
-      const cd=colorDist(data[idx],data[idx+1],data[idx+2],bg.r,bg.g,bg.b);
-
-      // mouth/eye lines tend to be darker and color-different than surrounding skin/white.
-      const darkScore=clamp((105-lum)/80,0,1);
-      const edgeScore=clamp(edge/(45/sensitivity),0,1);
-      const colorScore=clamp(cd/(55/sensitivity),0,1);
-      const score= type==="mouth"
-        ? darkScore*0.42 + edgeScore*0.33 + colorScore*0.25
-        : edgeScore*0.45 + darkScore*0.30 + colorScore*0.25;
-
-      // Ellipse falloff prevents unrelated nearby outlines from entering.
-      const ex=(x-cx)/(boxW*.52), ey=(y-cy)/(boxH*.52);
-      const fall=clamp(1-Math.sqrt(ex*ex+ey*ey),0,1);
-      const finalScore=score*fall;
-      if(finalScore>0.30){
-        rd[idx]=255;rd[idx+1]=255;rd[idx+2]=255;rd[idx+3]=Math.round(255*clamp(finalScore*1.7,0,1));
-      }
-    }
-  }
-  rg.putImageData(rawImg,0,0);
-
-  // Grow the contour to become a usable cutout region.
-  mg.save();
-  mg.filter=`blur(${Math.max(1,grow)}px)`;
-  mg.drawImage(raw,0,0);
-  mg.filter="none";
-  mg.globalCompositeOperation="source-in";
-  mg.fillStyle="#fff";
-  mg.fillRect(0,0,w,h);
-  mg.restore();
-
-  // Clip again to a feature-local ellipse.
-  const clip=createMask(w,h);
-  drawEllipseMask(clip,cx,cy,boxW*(type==="mouth"?0.58:0.54),boxH*(type==="mouth"?0.58:0.50));
-  mg.globalCompositeOperation="destination-in";
-  mg.drawImage(clip,0,0);
-  mg.globalCompositeOperation="source-over";
-
-  return mask;
-}
-
-function sampleRingColor(data,w,h,cx,cy,r0,r1){
-  let r=0,g=0,b=0,cnt=0;
-  const minX=clamp(cx-r1,0,w-1)|0,maxX=clamp(cx+r1,0,w-1)|0;
-  const minY=clamp(cy-r1,0,h-1)|0,maxY=clamp(cy+r1,0,h-1)|0;
-  for(let y=minY;y<=maxY;y+=3){
-    for(let x=minX;x<=maxX;x+=3){
-      const d=Math.hypot(x-cx,y-cy);
-      if(d<r0||d>r1)continue;
-      const idx=(y*w+x)*4;
-      if(data[idx+3]<10)continue;
-      r+=data[idx];g+=data[idx+1];b+=data[idx+2];cnt++;
-    }
-  }
-  if(cnt===0)return{r:220,g:180,b:170};
-  return{r:r/cnt,g:g/cnt,b:b/cnt};
-}
-function luma(r,g,b){return r*.299+g*.587+b*.114;}
-function colorDist(r,g,b,r2,g2,b2){return Math.hypot(r-r2,g-g2,b-b2);}
-function maskHasContent(mask){
-  const g=mask.getContext("2d");
-  const d=g.getImageData(0,0,mask.width,mask.height).data;
-  let cnt=0;
-  for(let i=3;i<d.length;i+=16){
-    if(d[i]>20)cnt++;
-    if(cnt>20)return true;
-  }
-  return false;
-}
-function softenMask(mask,blur){
-  if(!blur)return;
-  const temp=createMask(mask.width,mask.height);
-  const tg=temp.getContext("2d");
-  tg.filter=`blur(${blur}px)`;
-  tg.drawImage(mask,0,0);
-  tg.filter="none";
-  const g=mask.getContext("2d");
-  g.clearRect(0,0,mask.width,mask.height);
-  g.drawImage(temp,0,0);
-}
-
-function cutLayer(src,mask){
-  const c=document.createElement("canvas");
-  c.width=src.width;c.height=src.height;
-  const g=c.getContext("2d");
-  g.drawImage(src,0,0);
-  g.globalCompositeOperation="destination-in";
-  g.drawImage(mask,0,0);
-  g.globalCompositeOperation="source-over";
-  return c;
-}
-function inpaintByAverageColors(src,masks){
-  const out=document.createElement("canvas");
-  out.width=src.width;out.height=src.height;
-  const g=out.getContext("2d");
-  g.drawImage(src,0,0);
-
-  const sg=src.getContext("2d");
-  const srcData=sg.getImageData(0,0,src.width,src.height);
-  const outData=g.getImageData(0,0,out.width,out.height);
-  const w=src.width,h=src.height;
-  const strength=Number(state.controls.inpaintStrength||0.85);
-
-  for(const mask of masks){
-    const mg=mask.getContext("2d");
-    const md=mg.getImageData(0,0,w,h).data;
-    // Average surrounding color around mask bbox.
-    let minX=w,minY=h,maxX=0,maxY=0,has=false;
-    for(let y=0;y<h;y+=2){
-      for(let x=0;x<w;x+=2){
-        const a=md[(y*w+x)*4+3];
-        if(a>10){has=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}
-      }
-    }
-    if(!has)continue;
-    const pad=Number(state.controls.skinSampleRadius||24);
-    minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(w-1,maxX+pad);maxY=Math.min(h-1,maxY+pad);
-    let r=0,gg=0,b=0,cnt=0;
-    for(let y=minY;y<=maxY;y+=3){
-      for(let x=minX;x<=maxX;x+=3){
-        const idx=(y*w+x)*4;
-        if(md[idx+3]<10 && srcData.data[idx+3]>10){
-          r+=srcData.data[idx];gg+=srcData.data[idx+1];b+=srcData.data[idx+2];cnt++;
-        }
-      }
-    }
-    if(cnt===0)continue;
-    r/=cnt;gg/=cnt;b/=cnt;
-    for(let y=minY;y<=maxY;y++){
-      for(let x=minX;x<=maxX;x++){
-        const idx=(y*w+x)*4;
-        const ma=md[idx+3]/255;
-        if(ma>0){
-          const a=ma*strength;
-          outData.data[idx]=outData.data[idx]*(1-a)+r*a;
-          outData.data[idx+1]=outData.data[idx+1]*(1-a)+gg*a;
-          outData.data[idx+2]=outData.data[idx+2]*(1-a)+b*a;
-          outData.data[idx+3]=255;
-        }
-      }
-    }
-  }
-  g.putImageData(outData,0,0);
-  // Soft blur over filled areas by drawing scaled copy lightly.
-  g.save();
-  g.globalAlpha=0.18;
-  g.filter=`blur(${Number(state.controls.maskFeather||14)}px)`;
-  g.drawImage(out,0,0);
-  g.filter="none";
-  g.restore();
-  return out;
-}
-
-function drawCutoutLayers(g,r){
-  const L=state.layers;
-  if(!L)return;
-  const c=state.controls;
-  const p=normPoints();
-  const yaw=state.smooth.yaw;
-  const opacity=Number(c.layerOpacity||0.72);
-  const baseScale=r.w/900;
-
-  const headBone= c.boneRigMode ? Number(c.headBone||0.75) : 1;
-  const neckBone= c.boneRigMode ? Number(c.neckBone||0.42) : 1;
-  const bodyBone= c.boneRigMode ? Number(c.bodyBone||0.18) : 0.3;
-  const hairBone= c.boneRigMode ? Number(c.hairBone||0.62) : 1;
-
-  const headMove=state.smooth.headX*baseScale*headBone;
-  const headY=state.smooth.headY*baseScale*0.45*headBone;
-  const rot=yaw*Number(c.headRotate||2.6)*Math.PI/180*headBone;
-
-  if(c.inpaintBackground){
-    g.save();
-    g.globalAlpha=0.96;
-    g.drawImage(L.inpainted,r.x,r.y,r.w,r.h);
-    g.restore();
-  }
-
-  const drawLayer=(layer,pt,tx,ty,rotate=0,alpha=1,sx=1,sy=1)=>{
-    const cx=r.x+pt.x*r.w, cy=r.y+pt.y*r.h;
-    g.save();
-    g.globalAlpha=alpha;
-    g.translate(cx+tx,cy+ty);
-    g.rotate(rotate);
-    g.scale(sx,sy);
-    g.translate(-cx,-cy);
-    g.drawImage(layer,r.x,r.y,r.w,r.h);
-    g.restore();
-  };
-
-  // Body/neck/head hierarchy: body barely moves, neck follows, head follows more.
-  const bodyTx=state.smooth.headX*baseScale*bodyBone*0.15;
-  const neckTx=state.smooth.neckX*baseScale*neckBone;
-  const hairTx=state.smooth.hairX*baseScale*hairBone;
-
-  drawLayer(L.neckLayer,p.neck,neckTx,0,rot*.10,opacity*.82,1,1);
-
-  // Face/head layer should not heavily squash; Live2D feels like small transforms + parts.
-  drawLayer(
-    L.faceLayer,
-    p.face,
-    headMove,
-    headY,
-    rot,
-    opacity,
-    1-Math.abs(yaw)*0.012,
-    1+Math.abs(yaw)*0.006
-  );
-
-  // Hair overlay lags and swings opposite.
-  drawLayer(L.hairLayer,p.hair,hairTx,headY*.18,rot*.28,opacity*.76,1,1);
-
-  // Eyes: independent child parts, close with upper/lower lid weights.
-  const mOpen=clamp(state.smooth.mouth,0,1);
-  const blink=clamp(state.smooth.blink*Number(c.eyeLayerClose||1.10),0,0.92);
-  const smileEye=Number(c.eyeSmile||0.10);
-  const upper=Number(c.upperLid||0.75);
-  const lower=Number(c.lowerLid||0.35);
-  const closeAmount=clamp(blink + smileEye*0.55,0,0.94);
-  const eyeFollow=Number(c.eyeLayerFollow||0.50);
-  const eyeLag=Number(c.eyeLag||0.32);
-
-  const drawEye=(layer,pt,side)=>{
-    const ex=r.x+pt.x*r.w, ey=r.y+pt.y*r.h;
-    const follow=headMove*eyeFollow*(1-eyeLag);
-    const lidOffset=(upper-lower)*closeAmount*4*baseScale;
-    g.save();
-    g.globalAlpha=opacity*.96;
-    g.translate(ex+follow,ey+headY*.60+lidOffset);
-    g.rotate(rot*.28);
-    g.scale(1-Math.abs(yaw)*0.018,Math.max(0.06,1-closeAmount*0.88));
-    g.translate(-ex,-ey);
-    g.drawImage(layer,r.x,r.y,r.w,r.h);
-    g.restore();
-  };
-  drawEye(L.leftEyeLayer,p.leftEye,-1);
-  drawEye(L.rightEyeLayer,p.rightEye,1);
-
-  // Mouth: independent child part. Close snap prevents "always open" feeling.
-  const mx=r.x+p.mouth.x*r.w,my=r.y+p.mouth.y*r.h;
-  const openRaw=mOpen;
-  const snap=Number(c.mouthCloseSnap||0.65);
-  const open=openRaw < 0.10 ? openRaw*(1-snap) : openRaw;
-  const openScale=Number(c.mouthLayerOpen||1.10);
-  const drop=Number(c.mouthLayerDrop||18)*baseScale;
-  const smile=Number(c.mouthSmile||0.15);
-  const wide=Number(c.mouthWideBone||0.65);
-  g.save();
-  g.globalAlpha=opacity;
-  g.translate(mx+headMove*.82,my+headY+open*drop-smile*5*baseScale);
-  g.rotate(rot*.18);
-  g.scale(1+open*.08*openScale+smile*.08*wide,Math.max(0.18,1+open*.30*openScale-smile*.08));
-  g.translate(-mx,-my);
-  g.drawImage(L.mouthLayer,r.x,r.y,r.w,r.h);
-  g.restore();
-
-  
-  // Dedicated synthetic expression layers. These are intentionally clear/visible.
-  if((c.syntheticEyeLayer && state.smooth.blink>0.02) || (c.syntheticMouthLayer && state.smooth.mouth>0.02)){
-    drawMotionFallback(g,r,p,headMove,headY,rot,opacity);
-  }
-
-if(state.showMasks && state.controls.showMaskOverlay){
-    drawMaskOverlays(g,r,L);
-  }
-}
-
-
-function drawMotionFallback(g,r,p,headMove,headY,rot,opacity){
-  const blink=clamp(state.smooth.blink,0,1);
-  const mouth=clamp(state.smooth.mouth,0,1);
+function drawEye(g,img,pt,r,tx,ty,rot,blink){drawPart(g,img,pt,r,tx*.55,ty*.6,rot*.25,1,Math.max(.08,1-blink*.88),projectState.rig.eyeLayerAlpha);}
+function drawMouth(g,img,pt,r,tx,ty,rot,mouth){drawPart(g,img,pt,r,tx*.8,ty+mouth*projectState.rig.mouthLayerDrop*(r.w/900),rot*.18,1+mouth*.1*projectState.rig.mouthLayerOpen,1+mouth*.32*projectState.rig.mouthLayerOpen,projectState.rig.mouthLayerAlpha);}
+function drawSynthetic(g,r,p,tx,ty,rot){
   const scale=r.w/900;
-  const c=state.controls;
-  g.save();
-
-  if(c.syntheticEyeLayer && blink>0.02){
-    const alpha=Number(c.eyeLayerAlpha||0.95);
-    const drawLid=(pt)=>{
-      const x=r.x+pt.x*r.w+headMove*.65;
-      const y=r.y+pt.y*r.h+headY*.6;
+  const m=runtime.smooth.mouth;
+  const b=runtime.smooth.blink;
+  if(b>.04){
+    [p.leftEye,p.rightEye].forEach(pt=>{
+      const x=r.x+pt.x*r.w+tx*.55;
+      const y=r.y+pt.y*r.h+ty*.6;
       g.save();
       g.translate(x,y);
       g.rotate(rot*.25);
-      // Upper eyelid plate
-      g.fillStyle=`rgba(42,27,39,${alpha*(0.55+blink*0.35)})`;
+      g.fillStyle=`rgba(30,22,30,${.35+b*.45})`;
       g.beginPath();
-      g.ellipse(0,-2*scale,50*scale,Math.max(4,18*scale*blink),0,0,Math.PI*2);
+      g.ellipse(0,0,45*scale,18*scale*b,0,0,Math.PI*2);
       g.fill();
-      // Eyelash line
-      g.strokeStyle=`rgba(18,14,20,${alpha})`;
-      g.lineWidth=Math.max(2,3.2*scale);
-      g.beginPath();
-      g.moveTo(-42*scale,-3*scale);
-      g.quadraticCurveTo(0,9*scale*blink,42*scale,-3*scale);
-      g.stroke();
       g.restore();
-    };
-    drawLid(p.leftEye);
-    drawLid(p.rightEye);
+    });
   }
-
-  if(c.syntheticMouthLayer && mouth>0.02){
-    const alpha=Number(c.mouthLayerAlpha||0.95);
-    const x=r.x+p.mouth.x*r.w+headMove*.82;
-    const y=r.y+p.mouth.y*r.h+headY+mouth*Number(c.mouthLayerDrop||42)*scale*.38;
+  if(m>.04){
+    const x=r.x+p.mouth.x*r.w+tx*.8;
+    const y=r.y+p.mouth.y*r.h+ty+m*18*scale;
     g.save();
     g.translate(x,y);
     g.rotate(rot*.18);
-    // Inner mouth
-    g.fillStyle=`rgba(86,24,35,${alpha*(0.65+mouth*0.30)})`;
+    g.fillStyle=`rgba(90,25,38,${.45+m*.40})`;
     g.beginPath();
-    g.ellipse(0,0,30*scale*(1+mouth*.12),10*scale*(0.45+mouth*1.15),0,0,Math.PI*2);
+    g.ellipse(0,0,28*scale,10*scale*(.5+m*1.1),0,0,Math.PI*2);
     g.fill();
-    // Lower lip / highlight
-    g.strokeStyle=`rgba(238,118,130,${alpha*.72})`;
-    g.lineWidth=Math.max(1.5,2.2*scale);
-    g.beginPath();
-    g.moveTo(-22*scale,7*scale*(0.4+mouth));
-    g.quadraticCurveTo(0,14*scale*(0.5+mouth*.6),22*scale,7*scale*(0.4+mouth));
-    g.stroke();
-    // Mouth outline
-    g.strokeStyle=`rgba(52,16,24,${alpha})`;
-    g.lineWidth=Math.max(1.5,2.6*scale);
-    g.beginPath();
-    g.ellipse(0,0,31*scale*(1+mouth*.10),11*scale*(0.5+mouth*1.10),0,0,Math.PI*2);
-    g.stroke();
     g.restore();
   }
-
-  g.restore();
 }
 
-function drawMaskOverlays(g,r,L){
-  const list=[
-    [L.masks.face,"rgba(126,231,255,.20)"],
-    [L.masks.hair,"rgba(199,125,255,.18)"],
-    [L.masks.leftEye,"rgba(255,230,109,.22)"],
-    [L.masks.rightEye,"rgba(255,230,109,.22)"],
-    [L.masks.mouth,"rgba(255,122,217,.22)"],
-    [L.masks.neck,"rgba(85,239,196,.18)"]
-  ];
-  g.save();
-  for(const [mask,color] of list){
-    g.globalAlpha=1;
-    g.drawImage(tintMask(mask,color),r.x,r.y,r.w,r.h);
-  }
-  g.restore();
-}
-function tintMask(mask,color){
-  const c=document.createElement("canvas");
-  c.width=mask.width;c.height=mask.height;
-  const g=c.getContext("2d");
-  g.fillStyle=color;
-  g.fillRect(0,0,c.width,c.height);
-  g.globalCompositeOperation="destination-in";
-  g.drawImage(mask,0,0);
-  return c;
+function drawPartsGrid(g,w,h){g.fillStyle="rgba(0,0,0,.25)";g.fillRect(0,0,w,h);let i=0;Object.entries(projectState.parts).forEach(([name,img])=>{const col=i%3,row=Math.floor(i/3),cw=w/3,ch=h/4,x=col*cw,y=row*ch;g.strokeStyle="rgba(255,255,255,.2)";g.strokeRect(x+8,y+8,cw-16,ch-16);g.drawImage(img,x+10,y+26,cw-20,ch-38);g.fillStyle="#fff";g.font="13px system-ui";g.fillText(name,x+14,y+22);i++;});}
+function drawHelpers(g,r){
+  if(projectState.rig.showPins)Object.entries(projectState.points).forEach(([k,p])=>{const x=r.x+p.x*r.w,y=r.y+p.y*r.h;g.fillStyle=colors[k]||"#fff";g.beginPath();g.arc(x,y,k===runtime.tool?13:9,0,Math.PI*2);g.fill();g.strokeStyle="#111";g.stroke();});
+  if(projectState.rig.showMasks&&projectState.contours){["mouth","leftEye","rightEye"].forEach(k=>{const c=projectState.contours[k];if(!c)return;g.strokeStyle=k==="mouth"?"#ff6e9a":"#7ee7ff";g.lineWidth=2;g.beginPath();c.points.forEach((p,i)=>{const x=r.x+p.x/projectState.original.width*r.w,y=r.y+p.y/projectState.original.height*r.h;i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();g.stroke();});}
 }
 
-function drawLive2DLikeLayers(g,r){
-  const c=state.controls;
-  const p=normPoints();
-  const face=toPixel(p.face,r), neck=toPixel(p.neck,r), hair=toPixel(p.hair,r);
-  const scale=r.w/900;
-  const yaw=state.smooth.yaw;
-  const opacity=Number(c.layerOpacity||0.72);
-  const headMove=state.smooth.headX*scale*0.72;
-  const headY=state.smooth.headY*scale*0.55;
-  const rot=yaw*(Number(c.headRotate||4))*Math.PI/180;
-
-  // Neck subtle follow: local redraw, not whole-body distortion.
-  g.save();
-  g.globalAlpha=opacity*.38;
-  clipEllipse(g, neck.x+state.smooth.neckX*scale*.25, neck.y, 90*scale, 90*scale);
-  g.translate(state.smooth.neckX*scale*.18,0);
-  g.drawImage(state.image,r.x,r.y,r.w,r.h);
-  g.restore();
-
-  // Head/face layer: small rotation and translation, not violent mesh deformation.
-  g.save();
-  g.globalAlpha=opacity;
-  clipEllipse(g, face.x+headMove, face.y+headY+35*scale, 190*scale, 250*scale);
-  g.translate(face.x+headMove, face.y+headY);
-  g.rotate(rot);
-  g.scale(1-Math.abs(yaw)*0.035,1+Math.abs(yaw)*0.015);
-  g.translate(-face.x, -face.y);
-  g.drawImage(state.image,r.x,r.y,r.w,r.h);
-  g.restore();
-
-  // Hair delay layer: hair moves a little opposite/late.
-  g.save();
-  g.globalAlpha=opacity*.42;
-  clipEllipse(g, hair.x+state.smooth.hairX*scale*.28, hair.y+90*scale, 210*scale, 210*scale);
-  g.translate(state.smooth.hairX*scale*.30, state.smooth.headY*scale*.12);
-  g.drawImage(state.image,r.x,r.y,r.w,r.h);
-  g.restore();
-}
-
-function clipEllipse(g,cx,cy,rx,ry){
-  g.beginPath();
-  g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
-  g.clip();
-}
-
-function drawWarpedMesh(g,r){
-  const n=Math.max(8, Math.floor(state.controls.meshDensity));
-  const cols=n;
-  const rows=Math.max(16,Math.floor(n*state.image.height/state.image.width));
-  const verts=[];
-  for(let y=0;y<=rows;y++){
-    for(let x=0;x<=cols;x++){
-      const u=x/cols,v=y/rows;
-      verts.push({u,v,...warpPoint(u,v,r)});
-    }
-  }
-
-  // Background underlay hides tiny cracks and makes it obvious something is there.
-  g.save();
-  g.globalAlpha=0.10 + Number(state.controls.seamBlend||0.55)*0.22;
-  g.drawImage(state.image,r.x-4,r.y-4,r.w+8,r.h+8);
-  g.restore();
-
-  for(let y=0;y<rows;y++){
-    for(let x=0;x<cols;x++){
-      const i=y*(cols+1)+x;
-      const a=verts[i],b=verts[i+1],c=verts[i+cols+1],d=verts[i+cols+2];
-      drawTri(g,a,b,c);
-      drawTri(g,b,d,c);
-      if(state.showMeshLines){
-        g.save();
-        g.globalAlpha=.16;
-        g.strokeStyle="rgba(126,231,255,.75)";
-        g.lineWidth=.45;
-        g.beginPath();
-        g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(d.x,d.y);g.lineTo(c.x,c.y);g.closePath();
-        g.stroke();
-        g.restore();
-      }
-    }
-  }
-}
-
-function warpPoint(u,v,r){
-  const p=normPoints();
-  const c=state.controls, gp=(c.boneRigMode ? 0.42 : (c.safeDeform ? Math.min(c.globalPower||1,1.35) : (c.globalPower||1))), scale=r.w/900;
-  let x=r.x+u*r.w,y=r.y+v*r.h;
-
-  const face=toPixel(p.face,r),mouth=toPixel(p.mouth,r),chin=toPixel(p.chin,r),neck=toPixel(p.neck,r),hair=toPixel(p.hair,r);
-  const leftEye=toPixel(p.leftEye,r),rightEye=toPixel(p.rightEye,r);
-  const yaw=state.smooth.yaw;
-  const mouthOpen=state.smooth.mouth;
-  const blink=state.smooth.blink;
-  const partMode = !!c.partWeights;
-  const sep = partMode ? Number(c.partSeparation||0.65) : 0;
-
-  // Chest breathing only below neck.
-  const bodyInf=smoothStep(p.neck.y,1.0,v);
-  y += Math.sin(state.t*.035)*c.breath*scale*0.14*bodyInf;
-
-  // Elliptical regions: face, hair, neck.
-  const ox=(x-face.x)/(c.faceRadius*scale*0.92+.001);
-  const oy=(y-face.y)/(c.faceRadius*scale*1.24+.001);
-  let headInf=sCurve(clamp(1-Math.sqrt(ox*ox+oy*oy),0,1));
-
-  const hx=(x-hair.x)/(c.faceRadius*scale*.96+.001), hy=(y-hair.y)/(c.faceRadius*scale*.78+.001);
-  let hairInf=sCurve(clamp(1-Math.sqrt(hx*hx+hy*hy),0,1));
-  const nx=(x-neck.x)/(c.faceRadius*scale*.46+.001), ny=(y-neck.y)/(c.faceRadius*scale*.38+.001);
-  let neckInf=sCurve(clamp(1-Math.sqrt(nx*nx+ny*ny),0,1));
-
-  // Pseudo part separation: hair/neck don't fully follow face.
-  const faceFollow = partMode ? (1 + sep*0.10) : 1;
-  const hairFollow = partMode ? (1 - sep*0.35) : 1;
-  const neckFollow = partMode ? (1 - sep*0.45) : 1;
-
-  x += state.smooth.headX*scale*headInf*faceFollow;
-  y += state.smooth.headY*scale*headInf*faceFollow;
-  x += state.smooth.neckX*scale*neckInf*neckFollow;
-  x += state.smooth.hairX*scale*hairInf*hairFollow;
-
-  // Face turn deformation
-  const side=(x-face.x)/(c.faceRadius*scale+.001);
-  const verticalFace=clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*1.25+.001)),0,1);
-  const cheekInf=headInf*verticalFace;
-  x += yaw*c.headShift*scale*cheekInf*gp*(1-Math.abs(side)*.18);
-  x += -yaw*c.faceSquash*44*scale*cheekInf*side*gp;
-  x += yaw*c.cheekPower*scale*cheekInf*0.24*Math.sign(side||1)*(1-Math.abs(side))*gp;
-  y += Math.abs(yaw)*c.cheekPower*0.038*scale*cheekInf*Math.sign(y-face.y)*gp;
-
-  // Nose bridge / center band follows yaw strongly to fake depth.
-  const noseBand=clamp(1-Math.abs(side)/0.40,0,1)*clamp(1-Math.abs((y-face.y)/(c.faceRadius*scale*.92+.001)),0,1);
-  x += yaw*c.noseShift*scale*noseBand*.44*gp;
-
-  // Far-side eye compression and near-side expansion.
-  const eyeSquash = Number(c.farEyeSquash||0.45);
-  const farSide = Math.sign(yaw || 0);
-  const eyeSideInfluence = headInf * clamp(Math.abs(yaw),0,1);
-  x += -farSide * eyeSquash * 12 * scale * eyeSideInfluence * (Math.abs(side)>.12 ? Math.sign(side) : 0);
-
-  // Chin turn
-  const chx=(x-chin.x)/(c.faceRadius*scale*.60+.001), chy=(y-chin.y)/(c.faceRadius*scale*.45+.001);
-  let chinInf=sCurve(clamp(1-Math.sqrt(chx*chx+chy*chy),0,1));
-  x += yaw*c.chinFollow*scale*chinInf*.36*gp;
-  y += Math.abs(yaw)*c.chinFollow*scale*chinInf*.08*gp;
-
-  // Mouth deformation: vowel-ish behavior.
-  const mx=(x-mouth.x)/(c.mouthRadius*scale*1.22+.001), my=(y-mouth.y)/(c.mouthRadius*scale*.86+.001);
-  let mi=sCurve(clamp(1-Math.sqrt(mx*mx+my*my),0,1));
-  const lower=Math.max(0,(y-mouth.y)/(c.mouthRadius*scale+.001));
-  const upper=Math.max(0,(mouth.y-y)/(c.mouthRadius*scale+.001));
-  const lipWeight = y > mouth.y ? 0.45+0.95*clamp(lower,0,1) : 0.20+0.25*clamp(upper,0,1);
-
-  const vowel = (Math.sin(state.t*.11)+1)/2 * Number(c.vowelMix||0.75);
-  const round = Number(c.roundMouth||48)/100;
-  const wideShape = 1 + mouthOpen*(0.30 + 0.35*vowel);
-  const roundShape = 1 - mouthOpen*round*0.25;
-
-  // Mouth rig: upper lip mostly fixed, lower lip and corners move.
-  const openPower = c.safeDeform ? Math.min(c.mouthOpenPower,95) : c.mouthOpenPower;
-  y += mouthOpen*openPower*scale*mi*lipWeight*gp;
-  x += (x-mouth.x)*mouthOpen*0.30*mi*gp*wideShape*roundShape;
-  x += Math.sign(x-mouth.x||1)*mouthOpen*8*scale*mi*clamp(Math.abs(mx),0,1)*gp*(1-round*.45);
-
-  // "u" mouth: pull corners inward without dropping the whole jaw.
-  const roundPhase = mouthOpen * round * (1-vowel*.45);
-  x += (mouth.x-x)*roundPhase*0.24*mi*gp;
-
-  // Jaw follows, but much less than before so it does not become "顎だけ".
-  const jawInf=smoothStep(p.mouth.y+0.03,p.chin.y+.12,v)*headInf;
-  const jawPower = c.safeDeform ? Math.min(c.jawDrop,42) : c.jawDrop;
-  y += mouthOpen*jawPower*scale*jawInf*0.55*gp;
-
-  // Blink deformation, with eye lag against face yaw.
-  const eyeWarp=(eye, isLeft)=>{
-    const ex=(x-eye.x)/(c.eyeRadius*scale*1.18+.001), ey=(y-eye.y)/(c.eyeRadius*scale*.80+.001);
-    let ei=sCurve(clamp(1-Math.sqrt(ex*ex+ey*ey),0,1));
-    const toward=(eye.y-y);
-    const upperLid=y<eye.y?1.28:0.34;
-    const blinkP = c.safeDeform ? Math.min(c.blinkPower,72) : c.blinkPower;
-    y += toward*blink*(blinkP/100)*0.82*ei*upperLid*gp;
-    x += (eye.x-x)*blink*0.055*ei*gp;
-
-    // Eye line subtly lags behind head turn.
-    const eyeLag = Number(c.eyeLag||0.55);
-    x += -yaw*eyeLag*5*scale*ei*headInf;
-    // Far eye compresses more.
-    const sideOfEye = isLeft ? -1 : 1;
-    if(Math.sign(yaw) === sideOfEye){
-      x += (eye.x-x)*Math.abs(yaw)*eyeSquash*0.16*ei;
-    }
-  };
-  eyeWarp(leftEye,true);
-  eyeWarp(rightEye,false);
-
-  return {x,y};
-}
-
-function drawTri(g,p0,p1,p2){
-  const iw=state.image.width,ih=state.image.height;
-  const sx0=p0.u*iw,sy0=p0.v*ih,sx1=p1.u*iw,sy1=p1.v*ih,sx2=p2.u*iw,sy2=p2.v*ih;
-  let dx0=p0.x,dy0=p0.y,dx1=p1.x,dy1=p1.y,dx2=p2.x,dy2=p2.y;
-
-  // Expand triangles a hair to hide seams.
-  const cx=(dx0+dx1+dx2)/3,cy=(dy0+dy1+dy2)/3;
-  const expand=.35 + Number(state.controls.seamBlend||0.55)*0.65;
-  const push=(x,y)=>{const vx=x-cx,vy=y-cy,len=Math.hypot(vx,vy)||1;return{x:x+vx/len*expand,y:y+vy/len*expand};};
-  const q0=push(dx0,dy0),q1=push(dx1,dy1),q2=push(dx2,dy2);
-  dx0=q0.x;dy0=q0.y;dx1=q1.x;dy1=q1.y;dx2=q2.x;dy2=q2.y;
-
-  const denom=sx0*(sy1-sy2)+sx1*(sy2-sy0)+sx2*(sy0-sy1);
-  if(Math.abs(denom)<.0001)return;
-  const a=(dx0*(sy1-sy2)+dx1*(sy2-sy0)+dx2*(sy0-sy1))/denom;
-  const b=(dy0*(sy1-sy2)+dy1*(sy2-sy0)+dy2*(sy0-sy1))/denom;
-  const c=(dx0*(sx2-sx1)+dx1*(sx0-sx2)+dx2*(sx1-sx0))/denom;
-  const d=(dy0*(sx2-sx1)+dy1*(sx0-sx2)+dy2*(sx1-sx0))/denom;
-  const e=(dx0*(sx1*sy2-sx2*sy1)+dx1*(sx2*sy0-sx0*sy2)+dx2*(sx0*sy1-sx1*sy0))/denom;
-  const f=(dy0*(sx1*sy2-sx2*sy1)+dy1*(sx2*sy0-sx0*sy2)+dy2*(sx0*sy1-sx1*sy0))/denom;
-
-  g.save();
-  g.beginPath();
-  g.moveTo(dx0,dy0);g.lineTo(dx1,dy1);g.lineTo(dx2,dy2);g.closePath();
-  g.clip();
-  g.transform(a,b,c,d,e,f);
-  g.imageSmoothingEnabled=true;
-  g.drawImage(state.image,0,0);
-  g.restore();
-}
-
-function normPoints(){
-  const def={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};
-  return Object.fromEntries(Object.entries(def).map(([k,v])=>[k,state.points[k]||v]));
-}
-function toPixel(q,r){return{x:r.x+q.x*r.w,y:r.y+q.y*r.h};}
-function smoothStep(a,b,x){const t=clamp((x-a)/(b-a+.0001),0,1);return t*t*(3-2*t);}
-function sCurve(t){return t*t*(3-2*t);}
-
-
-
-function drawContourOverlay(g,r){
-  if(!state.contours||!state.controls.showGuideCircles)return;
-  const sx=r.w/state.image.width, sy=r.h/state.image.height;
-  const draw=(c,color)=>{
-    if(!c||!c.points)return;
-    g.save();
-    g.strokeStyle=color;
-    g.lineWidth=2;
-    g.beginPath();
-    c.points.forEach((p,i)=>{
-      const x=r.x+p.x*sx,y=r.y+p.y*sy;
-      if(i===0)g.moveTo(x,y);else g.lineTo(x,y);
-    });
-    g.closePath();
-    g.stroke();
-    g.restore();
-  };
-  draw(state.contours.mouth,"rgba(255,90,130,.9)");
-  draw(state.contours.leftEye,"rgba(126,231,255,.9)");
-  draw(state.contours.rightEye,"rgba(126,231,255,.9)");
-}
-
-function drawSegmentationOverlay(g,r){
-  const S=state.segmentation;
-  if(!S)return;
-  const colors=[
-    ["skin","rgba(255,190,170,.22)"],
-    ["hair","rgba(120,80,180,.22)"],
-    ["eye","rgba(100,180,255,.26)"],
-    ["mouth","rgba(255,80,120,.30)"],
-    ["cloth","rgba(80,80,120,.18)"]
-  ];
-  g.save();
-  for(const [k,col] of colors){
-    if(!S.masks[k])continue;
-    g.drawImage(maskToPreview(S.masks[k],col),r.x,r.y,r.w,r.h);
-  }
-  g.restore();
-}
-
-function drawGuides(g,r){
-  const p=normPoints(),scale=r.w/900,face=toPixel(p.face,r),mouth=toPixel(p.mouth,r),leftEye=toPixel(p.leftEye,r),rightEye=toPixel(p.rightEye,r);
-  g.save();
-  g.strokeStyle="rgba(126,231,255,.7)";g.lineWidth=2;
-  g.beginPath();g.arc(face.x,face.y,state.controls.faceRadius*scale,0,Math.PI*2);g.stroke();
-  g.strokeStyle="rgba(255,122,217,.7)";
-  g.beginPath();g.arc(mouth.x,mouth.y,state.controls.mouthRadius*scale,0,Math.PI*2);g.stroke();
-  g.strokeStyle="rgba(255,230,109,.7)";
-  g.beginPath();g.arc(leftEye.x,leftEye.y,state.controls.eyeRadius*scale,0,Math.PI*2);g.stroke();
-  g.beginPath();g.arc(rightEye.x,rightEye.y,state.controls.eyeRadius*scale,0,Math.PI*2);g.stroke();
-  g.restore();
-}
-function drawPoints(g,r){
-  Object.entries(normPoints()).forEach(([k,p])=>{
-    if(!state.points[k])return;
-    const x=r.x+p.x*r.w,y=r.y+p.y*r.h,sel=k===state.tool,rad=sel?16:12;
-    g.save();g.fillStyle=colors[k]||"#fff";g.strokeStyle="rgba(0,0,0,.75)";g.lineWidth=3;
-    g.beginPath();g.arc(x,y,rad,0,Math.PI*2);g.fill();g.stroke();
-    if(sel){g.strokeStyle="rgba(126,231,255,.9)";g.beginPath();g.arc(x,y,rad+8,0,Math.PI*2);g.stroke();}
-    g.font="800 15px system-ui";g.fillStyle="rgba(0,0,0,.8)";g.fillText(labels[k],x+rad+6,y-rad-2);g.fillStyle="#fff";g.fillText(labels[k],x+rad+5,y-rad-3);g.restore();
-  });
-}
-
-async function toggleMic(){
-  if(state.mic.enabled){stopMic();return;}
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    const AC=window.AudioContext||window.webkitAudioContext;
-    const ac=new AC(),src=ac.createMediaStreamSource(stream),an=ac.createAnalyser();
-    an.fftSize=1024;an.smoothingTimeConstant=.70;src.connect(an);
-    state.mic={enabled:true,stream,audioCtx:ac,analyser:an,data:new Uint8Array(an.fftSize),level:0};
-    document.getElementById("micBtn").textContent="マイク ON";
-  }catch(e){alert("マイク権限を確認してください");}
-}
-function stopMic(){
-  if(state.mic.stream)state.mic.stream.getTracks().forEach(t=>t.stop());
-  if(state.mic.audioCtx)state.mic.audioCtx.close().catch(()=>{});
-  state.mic={enabled:false,stream:null,audioCtx:null,analyser:null,data:null,level:0};
-  document.getElementById("micBtn").textContent="マイク OFF";
-}
-function updateMic(){
-  if(!state.mic.enabled||!state.mic.analyser){state.mic.level*=.88;return;}
-  state.mic.analyser.getByteTimeDomainData(state.mic.data);
-  let sum=0;for(const b of state.mic.data){const v=(b-128)/128;sum+=v*v;}
-  const rms=Math.sqrt(sum/state.mic.data.length);
-  state.mic.level=state.mic.level*.62+clamp(rms*state.controls.mouthSensitivity*.75,0,1)*.38;
-}
-
-function triggerBlink(manual=false){state.manual.blinkBoost=1.55;if(manual)state.doubleBlink=false;}
-function scheduleBlink(){state.nextBlink=performance.now()+2200+Math.random()*4200;state.doubleBlink=Math.random()<.18;}
-function updateMotion(now){
-  const c=state.controls,m=state.motion?1:0;
-  let targetYaw=c.manualYaw/100;
-  if(state.autoYaw)targetYaw=Math.sin(state.t*.026)*0.45;
-  if(state.cameraOn)targetYaw=state.track.yaw;
-  targetYaw+=state.manual.yawKey*.38;
-  state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),c.trackingSpeed);
-
-  const headTarget=state.smooth.yaw*c.headShift*m;
-  state.smooth.headX=lerp(state.smooth.headX,headTarget,.16);
-  state.smooth.headY=lerp(state.smooth.headY,Math.sin(state.t*.021)*1.4*m,.10);
-  state.smooth.neckX=lerp(state.smooth.neckX,headTarget*(c.neckFollow||0.35),.12*(1-c.neckLag*.55));
-  state.smooth.hairX=lerp(state.smooth.hairX,-headTarget*(c.hairDelay||0.45),.10*(1-c.hairLag*.50));
-
-  let targetMouth=Math.max(state.mic.level,state.manual.talking);
-  if(performance.now()<state.manual.mouthHoldUntil) targetMouth=Math.max(targetMouth,1.0);
-  if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.42);
-  state.manual.talking*=.62;
-
-  let targetBlink=state.manual.blinkBoost;
-  if(performance.now()<state.manual.blinkHoldUntil) targetBlink=Math.max(targetBlink,1.0);
-  if(state.cameraOn)targetBlink=Math.max(targetBlink,state.track.blink);
-  if(now>state.nextBlink&&!state.cameraOn){
-    triggerBlink();
-    if(state.doubleBlink)state.nextBlink=now+150;else scheduleBlink();
-    state.doubleBlink=false;
-  }
-  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.62);
-  state.manual.blinkBoost*=.42;
-
-  updateMeters();
-}
-function updateMeters(){
-  const vals={Yaw:Math.round(Math.abs(state.smooth.yaw)*100),Mouth:Math.round(clamp(state.smooth.mouth,0,1)*100),Blink:Math.round(clamp(state.smooth.blink,0,1)*100)};
-  for(const [k,v] of Object.entries(vals)){const t=document.getElementById("meter"+k),b=document.getElementById("bar"+k);if(t)t.textContent=v+"%";if(b)b.style.width=v+"%";}
-}
-
-function openObs(q){
-  state.obs=true;
-  state.showMasks=false;
-  state.showMeshLines=false;
-  state.debug=false;
-  state.controls.showPins=false;
-  state.controls.showGuideCircles=false;
-  state.controls.showMaskOverlay=false;
-  document.getElementById("obsOverlay").classList.remove("hidden");
-  if(q)document.body.classList.add("obs-mode");
-  fitObs();
-}
-function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"3.6",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
-function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v36",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v36");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
-
-function updateLabels(){
-  Object.keys(state.controls).forEach(id=>{
-    const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength","seamBlend","mouthEdgeSensitivity","eyeEdgeSensitivity","mouthLayerOpen","eyeLayerClose","eyeLayerFollow","headBone","neckBone","bodyBone","hairBone","mouthSmile","mouthCloseSnap","mouthWideBone","eyeSmile","upperLid","lowerLid","mouthRedBoost","mouthLayerAlpha","mouthHold","eyeLayerAlpha","blinkHold"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
-  });
-}
 function loop(now){
-  const delta=now-state.lastFrame;state.lastFrame=now;state.fps=state.fps*.9+(1000/Math.max(delta,1))*.1;document.getElementById("fpsReadout").textContent="FPS: "+Math.round(state.fps);
-  state.t++;updateMic();updateMotion(now);
-  const r=canvas.getBoundingClientRect();draw(ctx,r.width,r.height,true);
-  if(state.obs||document.body.classList.contains("obs-mode"))draw(obsCtx,innerWidth,innerHeight,false);
+  const dt=now-runtime.lastFrame;runtime.lastFrame=now;runtime.fps=runtime.fps*.9+(1000/Math.max(1,dt))*.1;runtime.t++;
+  updateMotion(now);updateMeters();
+  drawAvatar(ctxs.cut,canvases.cut.width,canvases.cut.height,true,runtime.viewMode);
+  drawAvatar(ctxs.rig,canvases.rig.width,canvases.rig.height,false,"live");
+  drawAvatar(ctxs.live,canvases.live.width,canvases.live.height,false,"live");
+  if(runtime.obs)drawAvatar(ctxs.obs,canvases.obs.width,canvases.obs.height,false,"live");
+  const fps=document.getElementById("fpsReadout");if(fps)fps.textContent="FPS: "+Math.round(runtime.fps);
   requestAnimationFrame(loop);
 }
 
-function setDebugStatus(kind,text){
-  const id = kind === "image" ? "imageStatus" : kind === "mesh" ? "meshStatus" : "renderStatus";
-  const el = document.getElementById(id);
-  if(el) el.textContent = (kind === "image" ? "Image: " : kind === "mesh" ? "Mesh: " : "Render: ") + text;
+function updateMotion(now){
+  const targetYaw=runtime.autoYaw?Math.sin(runtime.t*.025)*.42:0;
+  runtime.smooth.yaw=lerp(runtime.smooth.yaw,targetYaw,.12);
+  runtime.smooth.headX=lerp(runtime.smooth.headX,targetYaw*28,.14);
+  runtime.smooth.headY=lerp(runtime.smooth.headY,Math.sin(runtime.t*.018)*1.4,.08);
+  runtime.smooth.neckX=lerp(runtime.smooth.neckX,targetYaw*9,.08);
+  runtime.smooth.hairX=lerp(runtime.smooth.hairX,-targetYaw*18,.07);
+  let mouth=runtime.manual.talking;
+  if(now<runtime.manual.mouthUntil)mouth=1;
+  runtime.smooth.mouth=lerp(runtime.smooth.mouth,mouth,.35);
+  runtime.manual.talking*=.62;
+  let blink=runtime.manual.blinkBoost;
+  if(now<runtime.manual.blinkUntil)blink=1;
+  runtime.smooth.blink=lerp(runtime.smooth.blink,blink,.48);
+  runtime.manual.blinkBoost*=.42;
 }
+function updateMeters(){const vals={Yaw:Math.round(Math.abs(runtime.smooth.yaw)*100),Mouth:Math.round(runtime.smooth.mouth*100),Blink:Math.round(runtime.smooth.blink*100)};Object.entries(vals).forEach(([k,v])=>{const m=document.getElementById("meter"+k),b=document.getElementById("bar"+k);if(m)m.textContent=v+"%";if(b)b.style.width=v+"%";});}
 
+function updateControls(){
+  Object.entries(projectState.rig).forEach(([k,v])=>{const el=document.getElementById(k);if(!el)return;if(el.type==="checkbox")el.checked=!!v;else el.value=v;const lab=document.getElementById(k+"Val");if(lab)lab.textContent=typeof v==="number"?v.toFixed(k.includes("Hold")||k.includes("Scale")||k.includes("Bone")||k.includes("Alpha")?2:1):v;});
+  updateProjectReadout();
+}
+function updateProjectReadout(){const el=document.getElementById("statusReadout");if(el)el.textContent=`parts:${Object.keys(projectState.parts).length} contours:${Object.keys(projectState.contours).length}`;}
+function saveProject(){localStorage.setItem("livepic_v37_project",JSON.stringify({points:projectState.points,rig:projectState.rig,originalDataUrl:projectState.originalDataUrl}));setStatus("cutStatus","保存しました");}
+function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
+function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
+function downloadParts(){Object.entries(projectState.parts).forEach(([name,canvas],i)=>setTimeout(()=>{const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download=`livepic_${name}.png`;document.body.appendChild(a);a.click();a.remove();},i*150));}
+function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();}
+function openObs(){runtime.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");resizeAll();}
+function closeObs(){runtime.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
+function setStatus(id,text){const el=document.getElementById(id);if(el)el.textContent=text;}
+function reportError(label,err){console.error(label,err);setStatus("cutStatus",`${label}: ${err.message||err}`);}
+function clearError(){}
+function luma(r,g,b){return r*.299+g*.587+b*.114;}
 function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 function lerp(a,b,t){return a+(b-a)*t;}
