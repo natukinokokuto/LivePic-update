@@ -3,18 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v0.7</title>
+  <title>LivePic v0.8</title>
   <link rel="stylesheet" href="./style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>1枚絵をIRIAM方向に近づけるための滑らか変形テスト版</p>
+    <p>画像の顔認識ポイント配置＋カメラ表情トラッキングα版</p>
   </div>
   <div class="header-actions">
     <button id="openObsBtn" class="primary">OBS表示</button>
-    <span class="pill">v0.7 IRIAM Direction</span>
+    <span class="pill">v0.8 Face Detect</span>
   </div>
 </header>
 
@@ -28,7 +30,10 @@
     <button id="sampleBtn">サンプルキャラ表示</button>
     <div id="fileName" class="hint">透過PNG推奨。最初はサンプルが出ます。</div>
 
-    <h2>ポイント指定</h2>
+    <h2>顔ポイント</h2>
+    <button id="detectFaceBtn" class="primary">画像から顔認識して自動配置</button>
+    <div id="detectStatus" class="hint">顔認識にはネット接続が必要です。GitHub Pages上での使用推奨。</div>
+
     <div class="tool-grid">
       <button class="tool active" data-point="face">顔中心</button>
       <button class="tool" data-point="leftEye">左目</button>
@@ -40,7 +45,7 @@
       <button class="tool" data-point="hair">髪中心</button>
     </div>
     <p class="hint">ホイールでズーム、ドラッグで表示移動。クリックでポイント配置。</p>
-    <button id="autoPointBtn">ポイント自動配置</button>
+    <button id="autoPointBtn">固定プリセット配置</button>
 
     <h2>保存/復元</h2>
     <div class="row">
@@ -57,9 +62,16 @@
   <section class="stage-card">
     <div class="stage-toolbar">
       <button id="toggleMotionBtn">モーション ON</button>
-      <button id="micBtn" class="primary">マイク OFF</button>
-      <button id="blinkBtn">まばたき</button>
-      <button id="talkBtn">口パク</button>
+      <button id="micBtn">マイク口パク OFF</button>
+      <button id="cameraBtn" class="primary">カメラ表情 OFF</button>
+      <button id="openObsBtn2">OBS</button>
+    </div>
+
+    <div class="stage-toolbar">
+      <button id="blinkBtn">まばたきテスト</button>
+      <button id="talkBtn">口パクテスト</button>
+      <button id="autoYawBtn">顔向き自動 OFF</button>
+      <button id="resetFaceBtn">顔向き戻す</button>
     </div>
 
     <div class="zoom-toolbar">
@@ -77,9 +89,11 @@
 
     <div class="readout">
       <span id="currentTool">選択中: 顔中心</span>
-      <span>A/D: 顔向き / Space: 口 / B: まばたき</span>
+      <span id="trackingStatus">Tracking: OFF</span>
       <span id="fps">FPS: --</span>
     </div>
+
+    <video id="video" playsinline muted></video>
   </section>
 
   <section class="panel">
@@ -103,20 +117,22 @@
     <input id="faceRadius" type="range" min="80" max="420" value="230">
     <label>滑らか密度 <span id="meshDensityVal"></span></label>
     <input id="meshDensity" type="range" min="18" max="90" value="54">
-    <button id="autoYawBtn">顔向き自動テスト OFF</button>
 
     <h2>表情</h2>
     <label>口パク量 <span id="mouthAmountVal"></span></label>
-    <input id="mouthAmount" type="range" min="0" max="90" value="34">
+    <input id="mouthAmount" type="range" min="0" max="120" value="58">
     <label>口の横幅 <span id="mouthWideVal"></span></label>
-    <input id="mouthWide" type="range" min="10" max="90" value="44">
+    <input id="mouthWide" type="range" min="10" max="120" value="58">
     <label>まばたき量 <span id="blinkAmountVal"></span></label>
-    <input id="blinkAmount" type="range" min="0" max="70" value="28">
+    <input id="blinkAmount" type="range" min="0" max="100" value="52">
     <label>目線ゆらぎ <span id="eyeWanderVal"></span></label>
     <input id="eyeWander" type="range" min="0" max="30" value="8">
 
-    <h2>注意</h2>
-    <p class="hint">これはまだ“IRIAM方向の研究版”。本物っぽくするには、次に「目・口・頬・髪の専用範囲マスク」が必要。</p>
+    <h2>補正</h2>
+    <label>口感度 <span id="mouthSensitivityVal"></span></label>
+    <input id="mouthSensitivity" type="range" min="1" max="8" step="0.1" value="4.0">
+    <label>まばたき感度 <span id="blinkSensitivityVal"></span></label>
+    <input id="blinkSensitivity" type="range" min="1" max="8" step="0.1" value="3.2">
   </section>
 </main>
 

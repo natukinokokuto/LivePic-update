@@ -8,16 +8,19 @@ const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
 const obsCanvas=document.getElementById("obsCanvas");
 const obsCtx=obsCanvas.getContext("2d");
+const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,autoYaw:false,
+  tool:"face",motion:true,obs:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
     breath:16,sway:10,tilt:6,micGain:3.0,
     yaw:0,meshPower:48,faceRadius:230,meshDensity:54,meshEnabled:true,
-    mouthAmount:34,mouthWide:44,blinkAmount:28,eyeWander:8
+    mouthAmount:58,mouthWide:58,blinkAmount:52,eyeWander:8,
+    mouthSensitivity:4.0,blinkSensitivity:3.2
   },
+  track:{yaw:0,mouth:0,blink:0},
   smooth:{yaw:0,mouth:0,blink:0,eyeX:0,eyeY:0},
   manual:{talking:0,blinkBoost:0,yawKey:0,y:0},
   view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,dragMoved:false},
@@ -56,24 +59,28 @@ function wire(){
   window.addEventListener("resize",()=>{fitCanvas();fitObs();});
   document.getElementById("fileInput").addEventListener("change",e=>{const f=e.target.files[0];if(f)loadFile(f);});
   document.getElementById("sampleBtn").onclick=loadSample;
+  document.getElementById("detectFaceBtn").onclick=detectFaceFromImage;
   document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
   document.getElementById("autoPointBtn").onclick=autoPoints;
   document.getElementById("toggleMotionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("toggleMotionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
   document.getElementById("micBtn").onclick=toggleMic;
+  document.getElementById("cameraBtn").onclick=toggleCameraTracking;
   document.getElementById("blinkBtn").onclick=()=>triggerBlink(true);
   document.getElementById("talkBtn").onclick=()=>state.manual.talking=1;
+  document.getElementById("autoYawBtn").onclick=()=>{state.autoYaw=!state.autoYaw;document.getElementById("autoYawBtn").textContent=state.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";};
+  document.getElementById("resetFaceBtn").onclick=()=>{state.controls.yaw=0;state.track.yaw=0;state.smooth.yaw=0;updateLabels();};
   document.getElementById("openObsBtn").onclick=()=>openObs(false);
+  document.getElementById("openObsBtn2").onclick=()=>openObs(false);
   document.getElementById("closeObs").onclick=closeObs;
   document.getElementById("saveLocalBtn").onclick=()=>{saveLocal();alert("保存しました");};
   document.getElementById("loadLocalBtn").onclick=()=>restoreLocal(true);
   document.getElementById("exportBtn").onclick=()=>document.getElementById("settingsBox").value=JSON.stringify(settings(),null,2);
   document.getElementById("importBtn").onclick=()=>{try{applySettings(JSON.parse(document.getElementById("settingsBox").value));saveLocal();alert("読み込みました");}catch(e){alert("JSONが読めません");}};
-  document.getElementById("autoYawBtn").onclick=()=>{state.autoYaw=!state.autoYaw;document.getElementById("autoYawBtn").textContent=state.autoYaw?"顔向き自動テスト ON":"顔向き自動テスト OFF";};
 
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
-    el.addEventListener(el.type==="checkbox"?"change":"input",e=>{
+    el.addEventListener(el.type==="checkbox"?"change":"input",()=>{
       state.controls[id]=el.type==="checkbox"?el.checked:Number(el.value);
       updateLabels();
     });
@@ -88,7 +95,7 @@ function wire(){
   });
   window.addEventListener("mouseup",()=>state.view.dragging=false);
   canvas.addEventListener("click",e=>{if(state.view.dragMoved){state.view.dragMoved=false;return;}placePoint(e);});
-  canvas.addEventListener("wheel",e=>{e.preventDefault();zoomAt(e.deltaY<0?1.12:0.88,e.clientX,e.clientY);},{passive:false});
+  canvas.addEventListener("wheel",e=>{e.preventDefault();zoomAt(e.deltaY<0?1.12:0.88);},{passive:false});
   document.getElementById("zoomRange").addEventListener("input",e=>{state.view.zoom=Number(e.target.value)/100;updateZoomUi();});
   document.getElementById("zoomInBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom*1.2,.5,4.5);updateZoomUi();};
   document.getElementById("zoomOutBtn").onclick=()=>{state.view.zoom=clamp(state.view.zoom/1.2,.5,4.5);updateZoomUi();};
@@ -117,13 +124,113 @@ function selectTool(b){
 function loadFile(file){const r=new FileReader();r.onload=()=>loadImage(r.result,file.name,true);r.readAsDataURL(file);}
 function loadSample(){loadImage("data:image/svg+xml;charset=utf-8,"+encodeURIComponent(sampleSvg),"LivePic_sample.svg",true);}
 function loadImage(url,name,auto){const img=new Image();img.onload=()=>{state.image=img;state.imageDataUrl=url;state.imageName=name;document.getElementById("fileName").textContent=name;document.getElementById("dropMessage").style.display="none";if(auto)autoPoints();saveLocal();};img.src=url;}
-function autoPoints(){state.points={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.40},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};}
+function autoPoints(){state.points={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};}
+
+async function getFaceMesh(){
+  if(state.faceMesh)return state.faceMesh;
+  if(typeof FaceMesh === "undefined"){
+    throw new Error("MediaPipeが読み込めません。ネット接続かGitHub Pages公開後に試してください。");
+  }
+  const fm=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+  fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
+  state.faceMesh=fm;
+  return fm;
+}
+
+async function detectFaceFromImage(){
+  const status=document.getElementById("detectStatus");
+  try{
+    if(!state.image)throw new Error("先に画像を読み込んでください");
+    status.textContent="顔認識中...";
+    const fm=await getFaceMesh();
+    const oldHandler=fm.onResults;
+    const result=await new Promise(async(resolve,reject)=>{
+      let done=false;
+      fm.onResults((res)=>{if(done)return;done=true;resolve(res);});
+      const temp=document.createElement("canvas");
+      temp.width=state.image.naturalWidth||state.image.width;
+      temp.height=state.image.naturalHeight||state.image.height;
+      const tg=temp.getContext("2d");
+      tg.drawImage(state.image,0,0,temp.width,temp.height);
+      try{await fm.send({image:temp});}catch(e){reject(e);}
+      setTimeout(()=>{if(!done)reject(new Error("顔を検出できませんでした"));},3500);
+    });
+    if(!result.multiFaceLandmarks || !result.multiFaceLandmarks[0])throw new Error("顔を検出できませんでした");
+    applyLandmarksToImagePoints(result.multiFaceLandmarks[0]);
+    status.textContent="顔認識OK。ポイントを自動配置しました。";
+    saveLocal();
+  }catch(e){
+    status.textContent="顔認識失敗: "+e.message;
+  }
+}
+
+function applyLandmarksToImagePoints(lm){
+  const avg=(ids)=>({x:ids.reduce((a,i)=>a+lm[i].x,0)/ids.length,y:ids.reduce((a,i)=>a+lm[i].y,0)/ids.length});
+  const leftEye=avg([33,133,159,145]);
+  const rightEye=avg([263,362,386,374]);
+  const mouth=avg([13,14,78,308]);
+  const chin=lm[152] || {x:.5,y:.55};
+  const nose=lm[1] || avg([leftEye,rightEye,mouth]);
+  const forehead=lm[10] || {x:nose.x,y:nose.y-.18};
+  state.points.leftEye=leftEye;
+  state.points.rightEye=rightEye;
+  state.points.mouth=mouth;
+  state.points.chin={x:chin.x,y:chin.y};
+  state.points.face={x:nose.x,y:(leftEye.y+rightEye.y+mouth.y)/3};
+  state.points.neck={x:chin.x,y:clamp(chin.y+.07,0,1)};
+  state.points.body={x:chin.x,y:clamp(chin.y+.23,0,1)};
+  state.points.hair={x:forehead.x,y:clamp(forehead.y-.04,0,1)};
+}
+
+async function toggleCameraTracking(){
+  if(state.cameraOn){
+    stopCameraTracking();
+    return;
+  }
+  try{
+    const fm=await getFaceMesh();
+    fm.onResults(onCameraResults);
+    state.camera=new Camera(video,{
+      onFrame:async()=>{await fm.send({image:video});},
+      width:640,height:480
+    });
+    await state.camera.start();
+    state.cameraOn=true;
+    document.getElementById("cameraBtn").textContent="カメラ表情 ON";
+    document.getElementById("trackingStatus").textContent="Tracking: ON";
+  }catch(e){
+    alert("カメラ表情を開始できません: "+e.message);
+  }
+}
+function stopCameraTracking(){
+  state.cameraOn=false;
+  if(state.camera && state.camera.stop)state.camera.stop();
+  if(video.srcObject)video.srcObject.getTracks().forEach(t=>t.stop());
+  document.getElementById("cameraBtn").textContent="カメラ表情 OFF";
+  document.getElementById("trackingStatus").textContent="Tracking: OFF";
+}
+function onCameraResults(res){
+  if(!res.multiFaceLandmarks || !res.multiFaceLandmarks[0])return;
+  const lm=res.multiFaceLandmarks[0];
+  const dist=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y);
+  const eyeW=(dist(33,133)+dist(263,362))/2;
+  const eyeOpen=(dist(159,145)+dist(386,374))/2;
+  const mouthW=dist(78,308);
+  const mouthOpen=dist(13,14);
+  const nose=lm[1], centerX=(lm[33].x+lm[263].x)/2;
+  const yaw=clamp((nose.x-centerX)*8,-1,1);
+  const mouth=clamp((mouthOpen/(mouthW+.0001)-.05)*state.controls.mouthSensitivity,0,1);
+  const blink=clamp((.23-(eyeOpen/(eyeW+.0001)))*state.controls.blinkSensitivity,0,1);
+  state.track.yaw=yaw;
+  state.track.mouth=mouth;
+  state.track.blink=blink;
+}
 
 function fitCanvas(){const r=document.getElementById("stage").getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=Math.max(1,Math.floor(r.width*d));canvas.height=Math.max(1,Math.floor(r.height*d));canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";ctx.setTransform(d,0,0,d,0,0);}
 function fitObs(){const d=devicePixelRatio||1;obsCanvas.width=Math.floor(innerWidth*d);obsCanvas.height=Math.floor(innerHeight*d);obsCtx.setTransform(d,0,0,d,0,0);}
 function baseRect(w,h){if(!state.image)return{x:0,y:0,w:0,h:0};const s=Math.min(w/state.image.width,h/state.image.height)*.92;return{x:(w-state.image.width*s)/2,y:(h-state.image.height*s)/2,w:state.image.width*s,h:state.image.height*s};}
 function imageRect(w,h,editor){const r=baseRect(w,h);if(!editor)return r;const cx=w/2,cy=h/2;return{x:cx+(r.x-cx)*state.view.zoom+state.view.panX,y:cy+(r.y-cy)*state.view.zoom+state.view.panY,w:r.w*state.view.zoom,h:r.h*state.view.zoom};}
-function zoomAt(f,cx,cy){const old=state.view.zoom,nz=clamp(old*f,.5,4.5);state.view.zoom=nz;updateZoomUi();}
+function zoomAt(f){state.view.zoom=clamp(state.view.zoom*f,.5,4.5);updateZoomUi();}
 function updateZoomUi(){document.getElementById("zoomVal").textContent=Math.round(state.view.zoom*100)+"%";document.getElementById("zoomRange").value=Math.round(state.view.zoom*100);}
 function placePoint(e){if(!state.image)return;const d=canvas.getBoundingClientRect(),r=imageRect(d.width,d.height,true);state.points[state.tool]={x:clamp((e.clientX-d.left-r.x)/r.w,0,1),y:clamp((e.clientY-d.top-r.y)/r.h,0,1)};}
 
@@ -154,7 +261,7 @@ function drawSmoothDeform(g,r){
   const img=state.image,c=state.controls;
   const strips=Math.max(18,Math.min(90,Math.floor(c.meshDensity)));
   const face=state.points.face||{x:.5,y:.32},chin=state.points.chin||{x:.5,y:.49},hair=state.points.hair||{x:.5,y:.20};
-  const fx=r.x+face.x*r.w,fy=r.y+face.y*r.h;
+  const fx=r.x+face.x*r.w;
   const cr=c.faceRadius*(r.w/900);
   const yaw=state.smooth.yaw;
   const sw=img.width/strips;
@@ -165,28 +272,14 @@ function drawSmoothDeform(g,r){
     const dx=x-fx;
     const side=dx/cr;
     const distX=Math.abs(dx)/cr;
-    const faceInf=clamp(1-distX,0,1);
+    let faceInf=clamp(1-distX,0,1);
+    faceInf=faceInf*faceInf;
     const power=c.meshPower*yaw;
-    const cheek=power*faceInf*faceInf*(1-Math.abs(side)*.24);
+    const cheek=power*faceInf*(1-Math.abs(side)*.24);
     const perspective=1-Math.abs(yaw)*0.045*faceInf;
-    const topY=r.y+Math.max(0,hair.y*r.h-55*(r.w/900));
-    const faceTop=r.y+hair.y*r.h-20*(r.w/900);
-    const faceBottom=r.y+chin.y*r.h+95*(r.w/900);
-
     const destX=r.x+(sx/img.width)*r.w + cheek*.42;
     const destW=(r.w/strips+1.4)*perspective;
-
-    // upper/hair section slightly drifts
     g.drawImage(img,sx,0,sw,img.height,destX,r.y,destW,r.h);
-
-    // soft cheek highlight/shadow illusion
-    if(Math.abs(yaw)>.06 && faceInf>.18){
-      g.save();
-      g.globalAlpha=Math.abs(yaw)*0.055*faceInf;
-      g.fillStyle=yaw>0 ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.35)";
-      g.fillRect(destX,faceTop,destW,faceBottom-faceTop);
-      g.restore();
-    }
   }
 }
 
@@ -194,25 +287,24 @@ function drawFaceOverlays(g,r){
   const c=state.controls;
   const mouth=state.points.mouth;
   const mouthOpen=state.smooth.mouth;
-  if(mouth&&mouthOpen>.015){
+  if(mouth&&mouthOpen>.01){
     const x=r.x+mouth.x*r.w,y=r.y+mouth.y*r.h;
     const o=ease(mouthOpen);
     const wide=c.mouthWide*(r.w/900);
     const open=c.mouthAmount*(r.w/900)*o;
     const yawShift=state.smooth.yaw*c.meshPower*.16;
     g.save();
-    g.globalAlpha=.78*o;
-    g.fillStyle="rgba(16,5,14,.82)";
+    g.globalAlpha=.88*o;
+    g.fillStyle="rgba(10,2,12,.9)";
     g.beginPath();
-    // voice changes shape: louder = rounder, quieter = horizontal
-    const rx=wide*(.65+.35*(1-o));
-    const ry=3*(r.w/900)+open*.34;
-    g.ellipse(x+yawShift,y+open*.10,rx,ry,0,0,Math.PI*2);
+    const rx=wide*(.70+.30*(1-o));
+    const ry=5*(r.w/900)+open*.45;
+    g.ellipse(x+yawShift,y+open*.12,rx,ry,0,0,Math.PI*2);
     g.fill();
-    g.globalAlpha=.20*o;
-    g.fillStyle="rgba(255,255,255,.8)";
+    g.globalAlpha=.22*o;
+    g.fillStyle="rgba(255,255,255,.85)";
     g.beginPath();
-    g.ellipse(x+yawShift,y+open*.35,rx*.45,Math.max(1,ry*.12),0,0,Math.PI*2);
+    g.ellipse(x+yawShift,y+open*.38,rx*.42,Math.max(1,ry*.12),0,0,Math.PI*2);
     g.fill();
     g.restore();
   }
@@ -224,24 +316,23 @@ function drawFaceOverlays(g,r){
       const x=r.x+p.x*r.w+state.smooth.yaw*c.meshPower*.10;
       const y=r.y+p.y*r.h;
       const close=ease(b);
-      const w=58*(r.w/900),h=(6+c.blinkAmount*.42)*(r.w/900)*close;
+      const w=72*(r.w/900),h=(7+c.blinkAmount*.56)*(r.w/900)*close;
       g.save();
-      g.globalAlpha=.84*close;
-      g.fillStyle="rgba(19,16,28,.82)";
+      g.globalAlpha=.93*close;
+      g.fillStyle="rgba(12,10,18,.9)";
       roundRect(g,x-w/2,y-h/2,w,h,999);
       g.fill();
-      g.globalAlpha=.45*close;
-      g.strokeStyle="rgba(255,220,230,.65)";
-      g.lineWidth=2*(r.w/900);
+      g.globalAlpha=.50*close;
+      g.strokeStyle="rgba(255,220,230,.75)";
+      g.lineWidth=2.5*(r.w/900);
       g.beginPath();
-      g.moveTo(x-w*.35,y);
-      g.quadraticCurveTo(x,y+h*.45,x+w*.35,y);
+      g.moveTo(x-w*.38,y);
+      g.quadraticCurveTo(x,y+h*.50,x+w*.38,y);
       g.stroke();
       g.restore();
     });
   }
 
-  // subtle eye gaze sparkle, not real pupil movement but gives life
   const ew=c.eyeWander*(r.w/900);
   if(ew>0 && b<.2){
     const ex=state.smooth.eyeX*ew,ey=state.smooth.eyeY*ew*.45;
@@ -251,7 +342,7 @@ function drawFaceOverlays(g,r){
       g.save();
       g.globalAlpha=.35;
       g.fillStyle="rgba(126,231,255,.75)";
-      g.beginPath();g.arc(x+8*(r.w/900),y-9*(r.w/900),3.5*(r.w/900),0,Math.PI*2);g.fill();
+      g.beginPath();g.arc(x+8*(r.w/900),y-9*(r.w/900),4*(r.w/900),0,Math.PI*2);g.fill();
       g.restore();
     });
   }
@@ -276,14 +367,14 @@ async function toggleMic(){
     const ac=new AC(),src=ac.createMediaStreamSource(stream),an=ac.createAnalyser();
     an.fftSize=1024;an.smoothingTimeConstant=.70;src.connect(an);
     state.mic={enabled:true,stream,audioCtx:ac,analyser:an,data:new Uint8Array(an.fftSize),level:0};
-    document.getElementById("micBtn").textContent="マイク ON";
+    document.getElementById("micBtn").textContent="マイク口パク ON";
   }catch(e){alert("マイク権限を確認してください");}
 }
 function stopMic(){
   if(state.mic.stream)state.mic.stream.getTracks().forEach(t=>t.stop());
   if(state.mic.audioCtx)state.mic.audioCtx.close().catch(()=>{});
   state.mic={enabled:false,stream:null,audioCtx:null,analyser:null,data:null,level:0};
-  document.getElementById("micBtn").textContent="マイク OFF";
+  document.getElementById("micBtn").textContent="マイク口パク OFF";
 }
 function updateMic(){
   if(!state.mic.enabled||!state.mic.analyser){state.mic.level*=.88;return;}
@@ -295,7 +386,7 @@ function updateMic(){
 }
 
 function triggerBlink(manual=false){
-  state.manual.blinkBoost=1;
+  state.manual.blinkBoost=1.25;
   if(manual)state.doubleBlink=false;
 }
 function scheduleBlink(){
@@ -306,20 +397,24 @@ function updateMotion(now){
   const c=state.controls;
   let targetYaw=c.yaw/100;
   if(state.autoYaw)targetYaw=Math.sin(state.t*.024)*.75;
+  if(state.cameraOn)targetYaw=state.track.yaw;
   targetYaw+=state.manual.yawKey*.85;
   state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),.10);
 
-  const targetMouth=Math.max(state.mic.level,state.manual.talking);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.28);
+  let targetMouth=Math.max(state.mic.level,state.manual.talking);
+  if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.32);
   state.manual.talking*=.82;
 
-  if(now>state.nextBlink){
+  let targetBlink=state.manual.blinkBoost;
+  if(state.cameraOn)targetBlink=Math.max(targetBlink,state.track.blink);
+  if(now>state.nextBlink && !state.cameraOn){
     triggerBlink();
     if(state.doubleBlink)state.nextBlink=now+150;
     else scheduleBlink();
     state.doubleBlink=false;
   }
-  state.smooth.blink=lerp(state.smooth.blink,state.manual.blinkBoost,.42);
+  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.45);
   state.manual.blinkBoost*=.56;
 
   state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)+Math.sin(state.t*.007)*.5,.03);
@@ -328,7 +423,7 @@ function updateMotion(now){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"0.7",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"0.8",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){
   if(d.points)state.points=d.points;
   if(d.controls)Object.assign(state.controls,d.controls);
@@ -336,13 +431,13 @@ function applySettings(d){
   updateLabels();
   if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);
 }
-function saveLocal(){try{localStorage.setItem("livepic_v07",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v07");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v08",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v08");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(id==="micGain")v=Number(v).toFixed(1);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(id==="micGain"||id==="mouthSensitivity"||id==="blinkSensitivity")v=Number(v).toFixed(1);lab.textContent=v;}
   });
 }
 function loop(now){
