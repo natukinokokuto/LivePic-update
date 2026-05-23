@@ -51,7 +51,9 @@ init();
 function init(){
   wire();
   fitCanvas();fitObs();updateLabels();updateZoomUi();scheduleBlink();
-  if(!restoreLocal(false))loadSample();
+  const restored=restoreLocal(false);
+  if(!restored) loadSample();
+  setTimeout(()=>{ if(!state.image) loadSample(); }, 800);
   if(new URLSearchParams(location.search).get("obs")==="1")openObs(true);
   requestAnimationFrame(loop);
 }
@@ -130,9 +132,141 @@ function selectTool(b){
   b.classList.add("active");state.tool=b.dataset.point;
   document.getElementById("toolReadout").textContent="選択中: "+labels[state.tool];
 }
-function loadFile(file){const r=new FileReader();r.onload=()=>loadImage(r.result,file.name,true);r.readAsDataURL(file);}
-function loadSample(){loadImage("data:image/svg+xml;charset=utf-8,"+encodeURIComponent(sampleSvg),"LivePic_sample.svg",true);}
-function loadImage(url,name,auto){const img=new Image();img.onload=()=>{state.image=img;state.imageDataUrl=url;state.imageName=name;document.getElementById("status").textContent=name;document.getElementById("dropMessage").style.display="none";if(auto)autoPoints();saveLocal();};img.src=url;}
+function loadFile(file){
+  const status=document.getElementById("status");
+  if(!file){return;}
+  if(status) status.textContent="ファイル読み込み中: "+file.name;
+  const r=new FileReader();
+  r.onload=()=>loadImage(r.result,file.name,true);
+  r.onerror=()=>{
+    if(status) status.textContent="ファイル読み込み失敗: "+file.name;
+  };
+  r.readAsDataURL(file);
+}
+
+function createSamplePngDataUrl(){
+  const c=document.createElement("canvas");
+  c.width=900;
+  c.height=1200;
+  const g=c.getContext("2d");
+
+  g.clearRect(0,0,c.width,c.height);
+
+  // shadow
+  g.fillStyle="rgba(18,19,30,.25)";
+  g.beginPath();g.ellipse(450,1030,250,120,0,0,Math.PI*2);g.fill();
+
+  // body
+  const cloth=g.createLinearGradient(250,520,650,1090);
+  cloth.addColorStop(0,"#ffffff");cloth.addColorStop(1,"#dfe7ff");
+  g.fillStyle=cloth;g.strokeStyle="#30364e";g.lineWidth=8;
+  g.beginPath();
+  g.moveTo(250,520);
+  g.bezierCurveTo(170,690,165,930,260,1090);
+  g.lineTo(640,1090);
+  g.bezierCurveTo(735,930,730,690,650,520);
+  g.bezierCurveTo(610,420,300,420,250,520);
+  g.closePath();g.fill();g.stroke();
+
+  // neck
+  g.fillStyle="#ffd8c8";g.strokeStyle="#30364e";g.lineWidth=6;
+  g.beginPath();g.moveTo(375,520);g.lineTo(525,520);g.lineTo(505,650);g.lineTo(395,650);g.closePath();g.fill();g.stroke();
+
+  // hair back
+  const hair=g.createLinearGradient(210,45,690,980);
+  hair.addColorStop(0,"#30264c");hair.addColorStop(1,"#141827");
+  g.fillStyle=hair;g.strokeStyle="#0d0f18";g.lineWidth=8;
+  g.beginPath();
+  g.moveTo(210,250);
+  g.bezierCurveTo(210,95,330,45,450,45);
+  g.bezierCurveTo(570,45,690,95,690,250);
+  g.bezierCurveTo(720,500,695,790,620,980);
+  g.bezierCurveTo(600,760,580,620,560,510);
+  g.bezierCurveTo(520,560,380,560,340,510);
+  g.bezierCurveTo(320,620,300,760,280,980);
+  g.bezierCurveTo(205,790,180,500,210,250);
+  g.closePath();g.fill();g.stroke();
+
+  // face
+  g.fillStyle="#ffd8c8";g.strokeStyle="#30364e";g.lineWidth=8;
+  g.beginPath();g.ellipse(450,340,205,245,0,0,Math.PI*2);g.fill();g.stroke();
+
+  // bangs
+  g.fillStyle=hair;g.strokeStyle="#0d0f18";g.lineWidth=5;
+  g.beginPath();
+  g.moveTo(270,280);
+  g.bezierCurveTo(330,150,570,150,630,280);
+  g.bezierCurveTo(570,220,330,220,270,280);
+  g.closePath();g.fill();
+  g.beginPath();
+  g.moveTo(285,260);
+  g.bezierCurveTo(330,135,520,110,610,235);
+  g.bezierCurveTo(515,190,380,200,285,260);
+  g.closePath();g.fill();g.stroke();
+
+  // eyes
+  g.fillStyle="#fff";
+  g.beginPath();g.ellipse(365,355,42,34,0,0,Math.PI*2);g.fill();
+  g.beginPath();g.ellipse(535,355,42,34,0,0,Math.PI*2);g.fill();
+  g.fillStyle="#8f69ff";
+  g.beginPath();g.arc(365,358,20,0,Math.PI*2);g.fill();
+  g.beginPath();g.arc(535,358,20,0,Math.PI*2);g.fill();
+  g.fillStyle="#fff";
+  g.beginPath();g.arc(372,348,7,0,Math.PI*2);g.fill();
+  g.beginPath();g.arc(542,348,7,0,Math.PI*2);g.fill();
+
+  // brows
+  g.strokeStyle="#1a1d2c";g.lineWidth=10;g.lineCap="round";
+  g.beginPath();g.moveTo(330,310);g.bezierCurveTo(360,290,390,292,410,315);g.stroke();
+  g.beginPath();g.moveTo(490,315);g.bezierCurveTo(510,292,540,290,570,310);g.stroke();
+
+  // nose mouth blush
+  g.strokeStyle="#e7a99b";g.lineWidth=7;
+  g.beginPath();g.moveTo(445,365);g.bezierCurveTo(435,410,430,420,450,430);g.stroke();
+  g.strokeStyle="#8f3340";g.lineWidth=11;
+  g.beginPath();g.moveTo(405,475);g.bezierCurveTo(435,505,470,505,500,475);g.stroke();
+  g.fillStyle="rgba(255,158,179,.45)";
+  g.beginPath();g.arc(315,430,24,0,Math.PI*2);g.fill();
+  g.beginPath();g.arc(585,430,24,0,Math.PI*2);g.fill();
+
+  // ribbon
+  g.fillStyle="#252944";g.strokeStyle="#151827";g.lineWidth=8;
+  g.beginPath();g.moveTo(350,655);g.lineTo(450,760);g.lineTo(550,655);g.closePath();g.fill();g.stroke();
+  g.fillStyle="#8f69ff";g.strokeStyle="#fff";g.lineWidth=6;
+  g.beginPath();g.arc(450,705,30,0,Math.PI*2);g.fill();g.stroke();
+
+  return c.toDataURL("image/png");
+}
+
+function loadSample(){
+  const dataUrl = createSamplePngDataUrl();
+  loadImage(dataUrl, "LivePic_sample_generated.png", true);
+}
+function loadImage(url,name,auto){
+  const status=document.getElementById("status");
+  const drop=document.getElementById("dropMessage");
+  if(status) status.textContent="画像読み込み中: "+name;
+  const img=new Image();
+  img.onload=()=>{
+    if(!img.width || !img.height){
+      if(status) status.textContent="画像読み込み失敗: サイズを取得できません";
+      if(drop){drop.style.display="block";drop.textContent="画像読み込み失敗";}
+      return;
+    }
+    state.image=img;
+    state.imageDataUrl=url;
+    state.imageName=name;
+    if(status) status.textContent="画像読み込みOK: "+name+" / "+img.width+"x"+img.height;
+    if(drop) drop.style.display="none";
+    if(auto) autoPoints();
+    saveLocal();
+  };
+  img.onerror=()=>{
+    if(status) status.textContent="画像読み込み失敗: "+name;
+    if(drop){drop.style.display="block";drop.textContent="画像を読み込めませんでした";}
+  };
+  img.src=url;
+}
 function autoPoints(){state.points={face:{x:.5,y:.32},leftEye:{x:.405,y:.30},rightEye:{x:.595,y:.30},mouth:{x:.5,y:.405},chin:{x:.5,y:.49},neck:{x:.5,y:.54},body:{x:.5,y:.70},hair:{x:.5,y:.20}};}
 
 async function getFaceMesh(){
@@ -477,10 +611,10 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.2",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.3",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v22",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v22");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v23",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v23");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
