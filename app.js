@@ -15,7 +15,7 @@ const state={
   tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:14,inpaintStrength:0.85,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
     blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
@@ -74,7 +74,9 @@ function wire(){
   document.getElementById("autoPointsBtn").onclick=autoPoints;
   document.getElementById("buildMasksBtn").onclick=buildAutoMasksAndLayers;
   document.getElementById("clearMasksBtn").onclick=()=>{state.layers=null;setMaskStatus("マスク解除しました","warn");};
-  document.getElementById("toggleMaskViewBtn").onclick=()=>{state.showMasks=!state.showMasks;document.getElementById("toggleMaskViewBtn").textContent=state.showMasks?"マスク表示 ON":"マスク表示 OFF";};
+  document.getElementById("toggleMaskViewBtn").onclick=()=>{state.showMasks=!state.showMasks;state.controls.showMaskOverlay=state.showMasks;document.getElementById("toggleMaskViewBtn").textContent=state.showMasks?"マスク表示 ON":"マスク表示 OFF";updateLabels();};
+  document.getElementById("togglePinsBtn").onclick=()=>{state.controls.showPins=!state.controls.showPins;document.getElementById("togglePinsBtn").textContent=state.controls.showPins?"ピン表示 ON":"ピン表示 OFF";updateLabels();};
+  document.getElementById("hideAllGuidesBtn").onclick=hideAllGuides;
   document.getElementById("rebuildLayersBtn").onclick=buildAutoMasksAndLayers;
   document.getElementById("resetViewBtn").onclick=()=>{state.view.zoom=1;state.view.panX=0;state.view.panY=0;updateZoomUi();};
   document.getElementById("motionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("motionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
@@ -127,7 +129,7 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:14,inpaintStrength:0.85,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
     blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
@@ -415,8 +417,8 @@ function draw(g,w,h,editor){
   }
 
   setDebugStatus("render","OK");
-  if(state.debug&&editor)drawGuides(g,r);
-  if(editor)drawPoints(g,r);
+  if(state.debug&&editor&&state.controls.showGuideCircles)drawGuides(g,r);
+  if(editor&&state.controls.showPins)drawPoints(g,r);
 }
 
 
@@ -426,6 +428,20 @@ function setMaskStatus(text,kind="good"){
   if(!el)return;
   el.textContent=text;
   el.className="hint "+kind;
+}
+
+function hideAllGuides(){
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  state.controls.showPins=false;
+  state.controls.showGuideCircles=false;
+  state.controls.showMaskOverlay=false;
+  const a=document.getElementById("toggleMaskViewBtn"); if(a) a.textContent="マスク表示 OFF";
+  const b=document.getElementById("togglePinsBtn"); if(b) b.textContent="ピン表示 OFF";
+  const c=document.getElementById("meshLineBtn"); if(c) c.textContent="メッシュ線 OFF";
+  setMaskStatus("補助表示を全部OFFにしました","warn");
+  updateLabels();
 }
 
 function buildAutoMasksAndLayers(showAlert=true){
@@ -607,19 +623,19 @@ function drawCutoutLayers(g,r){
   drawLayer(L.leftEyeLayer,p.leftEye.x,p.leftEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
   drawLayer(L.rightEyeLayer,p.rightEye.x,p.rightEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
 
-  // Mouth follows face and opens via local vertical scale.
+  // Mouth follows face with small local deformation; close state remains stable.
   const mOpen=state.smooth.mouth;
   const mx=r.x+p.mouth.x*r.w,my=r.y+p.mouth.y*r.h;
   g.save();
   g.globalAlpha=opacity;
-  g.translate(mx+headMove,my+headY);
-  g.rotate(rot*.35);
-  g.scale(1+mOpen*.12,1+mOpen*.38);
+  g.translate(mx+headMove,my+headY+mOpen*10*(r.w/900));
+  g.rotate(rot*.25);
+  g.scale(1+mOpen*.08,1+mOpen*.20);
   g.translate(-mx,-my);
   g.drawImage(L.mouthLayer,r.x,r.y,r.w,r.h);
   g.restore();
 
-  if(state.showMasks){
+  if(state.showMasks && state.controls.showMaskOverlay){
     drawMaskOverlays(g,r,L);
   }
 }
@@ -709,8 +725,8 @@ function drawWarpedMesh(g,r){
 
   // Background underlay hides tiny cracks and makes it obvious something is there.
   g.save();
-  g.globalAlpha=0.20;
-  g.drawImage(state.image,r.x-3,r.y-3,r.w+6,r.h+6);
+  g.globalAlpha=0.10 + Number(state.controls.seamBlend||0.55)*0.22;
+  g.drawImage(state.image,r.x-4,r.y-4,r.w+8,r.h+8);
   g.restore();
 
   for(let y=0;y<rows;y++){
@@ -807,30 +823,34 @@ function warpPoint(u,v,r){
   const wideShape = 1 + mouthOpen*(0.30 + 0.35*vowel);
   const roundShape = 1 - mouthOpen*round*0.25;
 
-  y += mouthOpen*c.mouthOpenPower*scale*mi*lipWeight*gp;
-  x += (x-mouth.x)*mouthOpen*0.42*mi*gp*wideShape*roundShape;
-  x += Math.sign(x-mouth.x||1)*mouthOpen*14*scale*mi*clamp(Math.abs(mx),0,1)*gp*(1-round*.35);
+  // Mouth rig: upper lip mostly fixed, lower lip and corners move.
+  const openPower = c.safeDeform ? Math.min(c.mouthOpenPower,95) : c.mouthOpenPower;
+  y += mouthOpen*openPower*scale*mi*lipWeight*gp;
+  x += (x-mouth.x)*mouthOpen*0.30*mi*gp*wideShape*roundShape;
+  x += Math.sign(x-mouth.x||1)*mouthOpen*8*scale*mi*clamp(Math.abs(mx),0,1)*gp*(1-round*.45);
 
-  // "u" mouth: pull corners slightly inward on some frames.
+  // "u" mouth: pull corners inward without dropping the whole jaw.
   const roundPhase = mouthOpen * round * (1-vowel*.45);
-  x += (mouth.x-x)*roundPhase*0.20*mi*gp;
+  x += (mouth.x-x)*roundPhase*0.24*mi*gp;
 
-  // Jaw follows mouth.
-  const jawInf=smoothStep(p.mouth.y,p.chin.y+.18,v)*headInf;
-  y += mouthOpen*c.jawDrop*scale*jawInf*gp;
+  // Jaw follows, but much less than before so it does not become "顎だけ".
+  const jawInf=smoothStep(p.mouth.y+0.03,p.chin.y+.12,v)*headInf;
+  const jawPower = c.safeDeform ? Math.min(c.jawDrop,42) : c.jawDrop;
+  y += mouthOpen*jawPower*scale*jawInf*0.55*gp;
 
   // Blink deformation, with eye lag against face yaw.
   const eyeWarp=(eye, isLeft)=>{
     const ex=(x-eye.x)/(c.eyeRadius*scale*1.18+.001), ey=(y-eye.y)/(c.eyeRadius*scale*.80+.001);
     let ei=sCurve(clamp(1-Math.sqrt(ex*ex+ey*ey),0,1));
     const toward=(eye.y-y);
-    const upperLid=y<eye.y?1.12:0.62;
-    y += toward*blink*(c.blinkPower/100)*1.05*ei*upperLid*gp;
-    x += (eye.x-x)*blink*0.13*ei*gp;
+    const upperLid=y<eye.y?1.28:0.34;
+    const blinkP = c.safeDeform ? Math.min(c.blinkPower,72) : c.blinkPower;
+    y += toward*blink*(blinkP/100)*0.82*ei*upperLid*gp;
+    x += (eye.x-x)*blink*0.055*ei*gp;
 
     // Eye line subtly lags behind head turn.
     const eyeLag = Number(c.eyeLag||0.55);
-    x += -yaw*eyeLag*10*scale*ei*headInf;
+    x += -yaw*eyeLag*5*scale*ei*headInf;
     // Far eye compresses more.
     const sideOfEye = isLeft ? -1 : 1;
     if(Math.sign(yaw) === sideOfEye){
@@ -850,7 +870,7 @@ function drawTri(g,p0,p1,p2){
 
   // Expand triangles a hair to hide seams.
   const cx=(dx0+dx1+dx2)/3,cy=(dy0+dy1+dy2)/3;
-  const expand=.45;
+  const expand=.35 + Number(state.controls.seamBlend||0.55)*0.65;
   const push=(x,y)=>{const vx=x-cx,vy=y-cy,len=Math.hypot(vx,vy)||1;return{x:x+vx/len*expand,y:y+vy/len*expand};};
   const q0=push(dx0,dy0),q1=push(dx1,dy1),q2=push(dx2,dy2);
   dx0=q0.x;dy0=q0.y;dx1=q1.x;dy1=q1.y;dx2=q2.x;dy2=q2.y;
@@ -948,8 +968,8 @@ function updateMotion(now){
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.38);
-  state.manual.talking*=.80;
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.30);
+  state.manual.talking*=.68;
 
   let targetBlink=state.manual.blinkBoost;
   if(state.cameraOn)targetBlink=Math.max(targetBlink,state.track.blink);
@@ -959,7 +979,7 @@ function updateMotion(now){
     state.doubleBlink=false;
   }
   state.smooth.blink=lerp(state.smooth.blink,targetBlink,.50);
-  state.manual.blinkBoost*=.55;
+  state.manual.blinkBoost*=.48;
 
   updateMeters();
 }
@@ -968,17 +988,28 @@ function updateMeters(){
   for(const [k,v] of Object.entries(vals)){const t=document.getElementById("meter"+k),b=document.getElementById("bar"+k);if(t)t.textContent=v+"%";if(b)b.style.width=v+"%";}
 }
 
-function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
+function openObs(q){
+  state.obs=true;
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  state.controls.showPins=false;
+  state.controls.showGuideCircles=false;
+  state.controls.showMaskOverlay=false;
+  document.getElementById("obsOverlay").classList.remove("hidden");
+  if(q)document.body.classList.add("obs-mode");
+  fitObs();
+}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.7",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.8",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v27",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v27");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v28",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v28");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength","seamBlend"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
