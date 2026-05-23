@@ -12,10 +12,10 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
+  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:14,inpaintStrength:0.85,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
     blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
@@ -72,6 +72,10 @@ function wire(){
   document.getElementById("presetBtn").onclick=applyPreset;
   document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
   document.getElementById("autoPointsBtn").onclick=autoPoints;
+  document.getElementById("buildMasksBtn").onclick=buildAutoMasksAndLayers;
+  document.getElementById("clearMasksBtn").onclick=()=>{state.layers=null;setMaskStatus("マスク解除しました","warn");};
+  document.getElementById("toggleMaskViewBtn").onclick=()=>{state.showMasks=!state.showMasks;document.getElementById("toggleMaskViewBtn").textContent=state.showMasks?"マスク表示 ON":"マスク表示 OFF";};
+  document.getElementById("rebuildLayersBtn").onclick=buildAutoMasksAndLayers;
   document.getElementById("resetViewBtn").onclick=()=>{state.view.zoom=1;state.view.panX=0;state.view.panY=0;updateZoomUi();};
   document.getElementById("motionBtn").onclick=()=>{state.motion=!state.motion;document.getElementById("motionBtn").textContent=state.motion?"モーション ON":"モーション OFF";};
   document.getElementById("trackingBtn").onclick=toggleTracking;
@@ -123,7 +127,7 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:14,inpaintStrength:0.85,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
     headShift:22,faceSquash:0.08,cheekPower:18,noseShift:14,chinFollow:20,hairLag:0.62,neckLag:0.42,headRotate:4,neckFollow:0.35,hairDelay:0.45,
     mouthSensitivity:8.0,mouthOpenPower:88,mouthRadius:82,jawDrop:45,vowelMix:0.55,roundMouth:36,
     blinkSensitivity:8.0,blinkPower:78,eyeRadius:70,farEyeSquash:0.18,eyeLag:0.35,
@@ -268,6 +272,8 @@ function loadImage(url,name,auto){
     setDebugStatus("image","OK "+img.width+"x"+img.height);
     if(drop) drop.style.display="none";
     if(auto) autoPoints();
+    state.layers=null;
+    setTimeout(()=>{ buildAutoMasksAndLayers(false); }, 80);
     saveLocal();
   };
   img.onerror=()=>{
@@ -394,7 +400,13 @@ function draw(g,w,h,editor){
     setDebugStatus("mesh","OFF");
   }
 
-  if(state.controls.live2dLayerMode){
+  if(state.controls.cutoutLayerMode && state.layers){
+    try{
+      drawCutoutLayers(g,r);
+    }catch(err){
+      console.error("cutout layer render failed", err);
+    }
+  }else if(state.controls.live2dLayerMode){
     try{
       drawLive2DLikeLayers(g,r);
     }catch(err){
@@ -407,6 +419,236 @@ function draw(g,w,h,editor){
   if(editor)drawPoints(g,r);
 }
 
+
+
+function setMaskStatus(text,kind="good"){
+  const el=document.getElementById("maskStatus");
+  if(!el)return;
+  el.textContent=text;
+  el.className="hint "+kind;
+}
+
+function buildAutoMasksAndLayers(showAlert=true){
+  if(!state.image){
+    setMaskStatus("画像がありません","bad");
+    return;
+  }
+  try{
+    const p=normPoints();
+    const iw=state.image.width, ih=state.image.height;
+    const temp=document.createElement("canvas");
+    temp.width=iw; temp.height=ih;
+    const tg=temp.getContext("2d");
+    tg.drawImage(state.image,0,0);
+
+    const maskCanvas=document.createElement("canvas");
+    maskCanvas.width=iw; maskCanvas.height=ih;
+    const mg=maskCanvas.getContext("2d");
+
+    const masks={
+      face:createMask(iw,ih),
+      hair:createMask(iw,ih),
+      leftEye:createMask(iw,ih),
+      rightEye:createMask(iw,ih),
+      mouth:createMask(iw,ih),
+      neck:createMask(iw,ih)
+    };
+
+    // Elliptical pseudo masks from points.
+    drawEllipseMask(masks.face,p.face.x*iw,(p.face.y+0.05)*ih,0.25*iw,0.28*ih);
+    drawEllipseMask(masks.hair,p.hair.x*iw,(p.hair.y+0.10)*ih,0.31*iw,0.26*ih);
+    drawEllipseMask(masks.leftEye,p.leftEye.x*iw,p.leftEye.y*ih,0.075*iw,0.055*ih);
+    drawEllipseMask(masks.rightEye,p.rightEye.x*iw,p.rightEye.y*ih,0.075*iw,0.055*ih);
+    drawEllipseMask(masks.mouth,p.mouth.x*iw,p.mouth.y*ih,0.10*iw,0.065*ih);
+    drawEllipseMask(masks.neck,p.neck.x*iw,p.neck.y*ih,0.12*iw,0.09*ih);
+
+    const faceLayer=cutLayer(temp,masks.face);
+    const hairLayer=cutLayer(temp,masks.hair);
+    const leftEyeLayer=cutLayer(temp,masks.leftEye);
+    const rightEyeLayer=cutLayer(temp,masks.rightEye);
+    const mouthLayer=cutLayer(temp,masks.mouth);
+    const neckLayer=cutLayer(temp,masks.neck);
+
+    const inpainted=inpaintByAverageColors(temp,[masks.face,masks.hair,masks.leftEye,masks.rightEye,masks.mouth,masks.neck]);
+
+    state.layers={base:temp,inpainted,masks,faceLayer,hairLayer,leftEyeLayer,rightEyeLayer,mouthLayer,neckLayer,width:iw,height:ih};
+    setMaskStatus("自動マスク＋穴埋めレイヤー生成OK","good");
+    if(showAlert) alert("自動マスク＋穴埋めレイヤーを生成しました");
+  }catch(err){
+    console.error(err);
+    setMaskStatus("マスク生成エラー: "+err.message,"bad");
+  }
+}
+
+function createMask(w,h){
+  const c=document.createElement("canvas");
+  c.width=w;c.height=h;
+  return c;
+}
+function drawEllipseMask(mask,cx,cy,rx,ry){
+  const g=mask.getContext("2d");
+  g.save();
+  g.fillStyle="#fff";
+  g.beginPath();
+  g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+  g.fill();
+  g.restore();
+}
+function cutLayer(src,mask){
+  const c=document.createElement("canvas");
+  c.width=src.width;c.height=src.height;
+  const g=c.getContext("2d");
+  g.drawImage(src,0,0);
+  g.globalCompositeOperation="destination-in";
+  g.drawImage(mask,0,0);
+  g.globalCompositeOperation="source-over";
+  return c;
+}
+function inpaintByAverageColors(src,masks){
+  const out=document.createElement("canvas");
+  out.width=src.width;out.height=src.height;
+  const g=out.getContext("2d");
+  g.drawImage(src,0,0);
+
+  const sg=src.getContext("2d");
+  const srcData=sg.getImageData(0,0,src.width,src.height);
+  const outData=g.getImageData(0,0,out.width,out.height);
+  const w=src.width,h=src.height;
+  const strength=Number(state.controls.inpaintStrength||0.85);
+
+  for(const mask of masks){
+    const mg=mask.getContext("2d");
+    const md=mg.getImageData(0,0,w,h).data;
+    // Average surrounding color around mask bbox.
+    let minX=w,minY=h,maxX=0,maxY=0,has=false;
+    for(let y=0;y<h;y+=2){
+      for(let x=0;x<w;x+=2){
+        const a=md[(y*w+x)*4+3];
+        if(a>10){has=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}
+      }
+    }
+    if(!has)continue;
+    const pad=18;
+    minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(w-1,maxX+pad);maxY=Math.min(h-1,maxY+pad);
+    let r=0,gg=0,b=0,cnt=0;
+    for(let y=minY;y<=maxY;y+=3){
+      for(let x=minX;x<=maxX;x+=3){
+        const idx=(y*w+x)*4;
+        if(md[idx+3]<10 && srcData.data[idx+3]>10){
+          r+=srcData.data[idx];gg+=srcData.data[idx+1];b+=srcData.data[idx+2];cnt++;
+        }
+      }
+    }
+    if(cnt===0)continue;
+    r/=cnt;gg/=cnt;b/=cnt;
+    for(let y=minY;y<=maxY;y++){
+      for(let x=minX;x<=maxX;x++){
+        const idx=(y*w+x)*4;
+        const ma=md[idx+3]/255;
+        if(ma>0){
+          const a=ma*strength;
+          outData.data[idx]=outData.data[idx]*(1-a)+r*a;
+          outData.data[idx+1]=outData.data[idx+1]*(1-a)+gg*a;
+          outData.data[idx+2]=outData.data[idx+2]*(1-a)+b*a;
+          outData.data[idx+3]=255;
+        }
+      }
+    }
+  }
+  g.putImageData(outData,0,0);
+  // Soft blur over filled areas by drawing scaled copy lightly.
+  g.save();
+  g.globalAlpha=0.18;
+  g.filter=`blur(${Number(state.controls.maskFeather||14)}px)`;
+  g.drawImage(out,0,0);
+  g.filter="none";
+  g.restore();
+  return out;
+}
+
+function drawCutoutLayers(g,r){
+  const L=state.layers;
+  if(!L)return;
+  const c=state.controls;
+  const p=normPoints();
+  const scaleX=r.w/L.width, scaleY=r.h/L.height;
+  const yaw=state.smooth.yaw;
+  const headMove=state.smooth.headX*(r.w/900)*0.75;
+  const headY=state.smooth.headY*(r.w/900)*0.45;
+  const rot=yaw*Number(c.headRotate||4)*Math.PI/180;
+  const opacity=Number(c.layerOpacity||0.72);
+
+  if(c.inpaintBackground){
+    g.save();
+    g.globalAlpha=0.95;
+    g.drawImage(L.inpainted,r.x,r.y,r.w,r.h);
+    g.restore();
+  }
+
+  const drawLayer=(layer,nx,ny,rx,ry,tx,ty,rotate=0,alpha=1,scale=1)=>{
+    const cx=r.x+nx*r.w, cy=r.y+ny*r.h;
+    g.save();
+    g.globalAlpha=alpha;
+    g.translate(cx+tx,cy+ty);
+    g.rotate(rotate);
+    g.scale(scale,scale);
+    g.translate(-cx,-cy);
+    g.drawImage(layer,r.x,r.y,r.w,r.h);
+    g.restore();
+  };
+
+  // Order: neck behind face, face, hair overlay, eyes/mouth last.
+  drawLayer(L.neckLayer,p.neck.x,p.neck.y,0,0,state.smooth.neckX*(r.w/900)*0.24,0,0,opacity*.80,1);
+  drawLayer(L.faceLayer,p.face.x,p.face.y,0,0,headMove,headY,rot,opacity,1-Math.abs(yaw)*0.02);
+  drawLayer(L.hairLayer,p.hair.x,p.hair.y,0,0,state.smooth.hairX*(r.w/900)*0.34,headY*.25,rot*.35,opacity*.72,1);
+
+  // Eyes move less than face, giving Live2D-ish independent parts.
+  const eyeLag=Number(c.eyeLag||0.35);
+  drawLayer(L.leftEyeLayer,p.leftEye.x,p.leftEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
+  drawLayer(L.rightEyeLayer,p.rightEye.x,p.rightEye.y,0,0,headMove*(1-eyeLag),headY*.75,rot*.45,opacity*.92,1);
+
+  // Mouth follows face and opens via local vertical scale.
+  const mOpen=state.smooth.mouth;
+  const mx=r.x+p.mouth.x*r.w,my=r.y+p.mouth.y*r.h;
+  g.save();
+  g.globalAlpha=opacity;
+  g.translate(mx+headMove,my+headY);
+  g.rotate(rot*.35);
+  g.scale(1+mOpen*.12,1+mOpen*.38);
+  g.translate(-mx,-my);
+  g.drawImage(L.mouthLayer,r.x,r.y,r.w,r.h);
+  g.restore();
+
+  if(state.showMasks){
+    drawMaskOverlays(g,r,L);
+  }
+}
+function drawMaskOverlays(g,r,L){
+  const list=[
+    [L.masks.face,"rgba(126,231,255,.20)"],
+    [L.masks.hair,"rgba(199,125,255,.18)"],
+    [L.masks.leftEye,"rgba(255,230,109,.22)"],
+    [L.masks.rightEye,"rgba(255,230,109,.22)"],
+    [L.masks.mouth,"rgba(255,122,217,.22)"],
+    [L.masks.neck,"rgba(85,239,196,.18)"]
+  ];
+  g.save();
+  for(const [mask,color] of list){
+    g.globalAlpha=1;
+    g.drawImage(tintMask(mask,color),r.x,r.y,r.w,r.h);
+  }
+  g.restore();
+}
+function tintMask(mask,color){
+  const c=document.createElement("canvas");
+  c.width=mask.width;c.height=mask.height;
+  const g=c.getContext("2d");
+  g.fillStyle=color;
+  g.fillRect(0,0,c.width,c.height);
+  g.globalCompositeOperation="destination-in";
+  g.drawImage(mask,0,0);
+  return c;
+}
 
 function drawLive2DLikeLayers(g,r){
   const c=state.controls;
@@ -728,15 +970,15 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.6",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.7",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v26",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v26");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v27",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v27");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity","partSeparation","vowelMix","farEyeSquash","eyeLag","layerOpacity","headRotate","neckFollow","hairDelay","inpaintStrength"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){

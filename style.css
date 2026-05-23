@@ -34,3 +34,7 @@ body.obs-mode{background:transparent;overflow:hidden}body.obs-mode .app-header,b
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+
+#maskStatus.good{color:#7ee7ff}
+#maskStatus.warn{color:#ffd36e}
+#maskStatus.bad{color:#ff7890}
