@@ -12,3 +12,5 @@ LivePic v4.3 Motion Link Mesh
 
 注意:
 まだ完全なLive2D/Cubismではありません。v4.3は「ピンを親子連動させて、自然に動く土台を作る」段階です。
+
+V44 loop mesh notes added.
