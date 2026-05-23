@@ -649,189 +649,176 @@ function drawBlinkLine(g,r,side,tx,ty,rot,b){
 }
 
 
+
 function generateMesh(showStatus=true){
   const p=projectState.points||{};
   const vertices=[];
+  const triangles=[];
+  const edges=[];
   const byKey={};
-  const addVertex=(key,x,y,extra={})=>{ const id=vertices.length; vertices.push({id,key,x,y,source:key,...extra}); byKey[key]=id; return id; };
-  const add=(key)=>{ if(!p[key])return null; return addVertex(key,p[key].x,p[key].y); };
-  const mid=(key,a,b,t=.5,extra={})=>{ if(!p[a]||!p[b])return null; return addVertex(key,lerp(p[a].x,p[b].x,t),lerp(p[a].y,p[b].y,t),{auto:true,...extra}); };
+  const addVertex=(key,x,y,extra={})=>{
+    const id=vertices.length;
+    const v={id,key,x:clamp(x,0,1),y:clamp(y,0,1),u:clamp(x,0,1),v:clamp(y,0,1),...extra};
+    vertices.push(v);
+    if(key)byKey[key]=id;
+    return id;
+  };
 
-  ["headTop","chin","templeL","templeR","neck","body","eyeLCenter","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeRCenter","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","mouthCenter","mouthLeft","mouthRight","mouthUpper","mouthLower","bangsRootL","bangsTipL","bangsRootR","bangsTipR","sideHairRootL","sideHairTipL","sideHairRootR","sideHairTipR","backHairRoot","backHairTip"].forEach(add);
-  mid("faceCenter","headTop","chin",.55,{group:"face"});
-  mid("browLine","templeL","templeR",.5,{group:"face"});
-  mid("upperFace","headTop","chin",.35,{group:"face"});
-  mid("lowerFace","headTop","chin",.72,{group:"face"});
-
-  // 顔は荒い4枚だけだと歪みが出るため、顔内に補助点を増やして細かくする。
-  if(p.headTop&&p.chin&&p.templeL&&p.templeR){
-    const leftX=p.templeL.x, rightX=p.templeR.x, topY=p.headTop.y, bottomY=p.chin.y;
-    const cx=(p.headTop.x+p.chin.x+p.templeL.x+p.templeR.x)/4;
-    const cols=5, rows=6;
-    for(let iy=1;iy<rows;iy++){
-      const ty=iy/rows;
-      const widthScale=Math.sin(Math.PI*ty)*.92+.08;
-      for(let ix=1;ix<cols;ix++){
-        const tx=ix/cols;
-        const x=lerp(cx+(leftX-cx)*widthScale, cx+(rightX-cx)*widthScale, tx);
-        const y=lerp(topY,bottomY,ty);
-        addVertex(`faceGrid_${ix}_${iy}`,x,y,{auto:true,group:"faceGrid",ix,iy});
-      }
+  // v45: 本物の面メッシュ。画像全体を細かい三角面で敷き、各頂点にUVを持たせる。
+  // これにより「楕円を切り抜いて動かす」ではなく、元画像一枚を三角面ごとに変形する。
+  const COLS=28, ROWS=34;
+  const grid=[];
+  for(let y=0;y<=ROWS;y++){
+    grid[y]=[];
+    for(let x=0;x<=COLS;x++){
+      grid[y][x]=addVertex(`grid_${x}_${y}`,x/COLS,y/ROWS,{group:'base',gx:x,gy:y});
+    }
+  }
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      const a=grid[y][x], b=grid[y][x+1], c=grid[y+1][x], d=grid[y+1][x+1];
+      triangles.push([a,b,c,'base']);
+      triangles.push([b,d,c,'base']);
     }
   }
 
-  // 目と口も中心だけでなく中間点を足して、形が潰れすぎないようにする。
-  [["L","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeLCenter"],["R","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","eyeRCenter"]].forEach(([side,inn,out,up,low,cen])=>{
-    mid(`eye${side}_upperIn`,inn,up,.5,{group:"eye"});
-    mid(`eye${side}_upperOut`,up,out,.5,{group:"eye"});
-    mid(`eye${side}_lowerOut`,out,low,.5,{group:"eye"});
-    mid(`eye${side}_lowerIn`,low,inn,.5,{group:"eye"});
-  });
-  mid("mouthUpperL","mouthLeft","mouthUpper",.5,{group:"mouth"});
-  mid("mouthUpperR","mouthUpper","mouthRight",.5,{group:"mouth"});
-  mid("mouthLowerR","mouthRight","mouthLower",.5,{group:"mouth"});
-  mid("mouthLowerL","mouthLower","mouthLeft",.5,{group:"mouth"});
-
-  const triangles=[]; const edges=[];
-  const tri=(a,b,c,group="face")=>{ if(byKey[a]!=null&&byKey[b]!=null&&byKey[c]!=null)triangles.push([byKey[a],byKey[b],byKey[c],group]); };
-  const edge=(a,b,group="line")=>{ if(byKey[a]!=null&&byKey[b]!=null)edges.push([byKey[a],byKey[b],group]); };
-
-  tri("headTop","templeL","upperFace","face"); tri("headTop","upperFace","templeR","face");
-  tri("templeL","lowerFace","upperFace","face"); tri("templeR","upperFace","lowerFace","face");
-  tri("templeL","chin","lowerFace","face"); tri("templeR","lowerFace","chin","face");
-  tri("chin","neck","lowerFace","neck"); tri("neck","body","lowerFace","body");
-  edge("headTop","chin","axis"); edge("templeL","templeR","face"); edge("chin","neck","neck"); edge("neck","body","body");
-
-  // 顔グリッドの三角化
-  for(let iy=1;iy<5;iy++){
-    for(let ix=1;ix<4;ix++){
-      const a=`faceGrid_${ix}_${iy}`, b=`faceGrid_${ix+1}_${iy}`, c=`faceGrid_${ix}_${iy+1}`, d=`faceGrid_${ix+1}_${iy+1}`;
-      tri(a,b,c,"faceGrid"); tri(b,d,c,"faceGrid");
-    }
-  }
-
-  [["L","eyeLCornerIn","eyeLCornerOut","eyeLUpper","eyeLLower","eyeLCenter"],["R","eyeRCornerIn","eyeRCornerOut","eyeRUpper","eyeRLower","eyeRCenter"]].forEach(([side,inn,out,up,low,cen])=>{
-    const ui=`eye${side}_upperIn`, uo=`eye${side}_upperOut`, lo=`eye${side}_lowerOut`, li=`eye${side}_lowerIn`;
-    tri(inn,ui,cen,"eye"); tri(ui,up,cen,"eye"); tri(up,uo,cen,"eye"); tri(uo,out,cen,"eye");
-    tri(out,lo,cen,"eye"); tri(lo,low,cen,"eye"); tri(low,li,cen,"eye"); tri(li,inn,cen,"eye");
-    edge(inn,out,"eye"); edge(up,low,"eye"); edge(inn,up,"eye"); edge(out,up,"eye"); edge(out,low,"eye"); edge(inn,low,"eye");
+  // ピン自体も頂点として保持。表示・輪郭ループ・制約の基準に使う。
+  Object.entries(p).forEach(([key,pt])=>{
+    if(pt&&Number.isFinite(pt.x)&&Number.isFinite(pt.y))addVertex(key,pt.x,pt.y,{group:'pin',pin:true});
   });
 
-  tri("mouthLeft","mouthUpperL","mouthCenter","mouth"); tri("mouthUpperL","mouthUpper","mouthCenter","mouth"); tri("mouthUpper","mouthUpperR","mouthCenter","mouth"); tri("mouthUpperR","mouthRight","mouthCenter","mouth");
-  tri("mouthRight","mouthLowerR","mouthCenter","mouth"); tri("mouthLowerR","mouthLower","mouthCenter","mouth"); tri("mouthLower","mouthLowerL","mouthCenter","mouth"); tri("mouthLowerL","mouthLeft","mouthCenter","mouth");
-  edge("mouthLeft","mouthRight","mouth"); edge("mouthUpper","mouthLower","mouth"); edge("mouthLeft","mouthUpper","mouth"); edge("mouthRight","mouthUpper","mouth"); edge("mouthRight","mouthLower","mouth"); edge("mouthLeft","mouthLower","mouth");
+  const edge=(a,b,group='guide')=>{ if(byKey[a]!=null&&byKey[b]!=null)edges.push([byKey[a],byKey[b],group]); };
+  const loop=(keys,group)=>{ for(let i=0;i<keys.length;i++)edge(keys[i],keys[(i+1)%keys.length],group); };
+  loop(['mouthLeft','mouthUpper','mouthRight','mouthLower'],'mouthLoop');
+  loop(['eyeLCornerIn','eyeLUpper','eyeLCornerOut','eyeLLower'],'eyeLoop');
+  loop(['eyeRCornerIn','eyeRUpper','eyeRCornerOut','eyeRLower'],'eyeLoop');
+  edge('headTop','chin','faceAxis'); edge('templeL','templeR','faceAxis'); edge('chin','neck','neck'); edge('neck','body','body');
+  edge('bangsRootL','bangsTipL','hair'); edge('bangsRootR','bangsTipR','hair');
+  edge('sideHairRootL','sideHairTipL','hair'); edge('sideHairRootR','sideHairTipR','hair'); edge('backHairRoot','backHairTip','hair');
 
-  [["bangsRootL","bangsTipL","headTop"],["bangsRootR","bangsTipR","headTop"],["sideHairRootL","sideHairTipL","templeL"],["sideHairRootR","sideHairTipR","templeR"],["backHairRoot","backHairTip","headTop"]].forEach(([root,tip,base])=>{tri(root,tip,base,"hair");edge(root,tip,"hair");});
-  projectState.mesh={vertices,triangles,edges};
-  if(showStatus)setStatus("cutStatus",`メッシュ生成OK: 頂点${vertices.length} / 三角${triangles.length}`);
+  projectState.mesh={version:'v45-real-uv-grid',cols:COLS,rows:ROWS,vertices,triangles,edges};
+  if(showStatus)setStatus('cutStatus',`実メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length}`);
   updateProjectReadout();
 }
 
+function distNorm(x,y,cx,cy,rx,ry){
+  rx=Math.max(.0001,rx); ry=Math.max(.0001,ry);
+  const dx=(x-cx)/rx, dy=(y-cy)/ry;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function softWeight(d){ return clamp(1-d,0,1)**2*(3-2*clamp(1-d,0,1)); }
+function getPt(name){return (projectState.points||{})[name]||null;}
+function pointSpan(a,b,fallback=.08){ const p1=getPt(a),p2=getPt(b); if(!p1||!p2)return fallback; return Math.max(fallback,Math.hypot(p1.x-p2.x,p1.y-p2.y)); }
+function clampMove(v,min,max){return Math.max(min,Math.min(max,v));}
+
 function warpedVertex(v,r){
-  const rig=projectState.rig, p=projectState.points;
+  const rig=projectState.rig||{};
+  const p=projectState.points||{};
   const nx=v.x, ny=v.y;
-  let x=r.x+nx*r.w, y=r.y+ny*r.h;
-  const scale=r.w/(projectState.original?.width||900);
-  const faceCenter=p.face||{x:.5,y:.38};
-  const yaw=runtime.smooth.yaw;
-  const soft=rig.faceWarpSoftness??.65;
-  const strength=(rig.meshStrength||.38)*(1-soft*.55);
+  let wx=nx, wy=ny;
 
-  // 顔全体は「歪ませる」より「まとまりで動く」寄りに抑える。
-  const headInfluence=ny<.62?1:clamp(1-(ny-.62)*3,0,.35);
-  x += runtime.smooth.headX*scale*strength*headInfluence;
-  y += runtime.smooth.headY*scale*.35*headInfluence;
-  x += (nx-faceCenter.x)*yaw*10*scale*strength*headInfluence;
+  const yaw=clamp(runtime.smooth.yaw||0,-1,1);
+  const headX=(runtime.smooth.headX||0)/(projectState.original?.width||900);
+  const headY=(runtime.smooth.headY||0)/(projectState.original?.height||1200);
+  const faceCenter=p.face||p.faceCenter||{x:.5,y:.40};
 
-  // 髪先だけ遅れて揺れる。rootはほぼ固定。
-  if((v.key||"").includes("Tip")||v.key==="backHairTip"){
-    x += runtime.smooth.hairX*scale*(rig.hairMeshStrength||.65);
-    y += Math.sin(runtime.t*.08+v.id)*2.2*scale;
-  }
+  // 顔全体の動きは強制制限。鼻から下や顎が吹き飛ばないように最大移動量を小さくする。
+  const faceTop=p.headTop?.y??.10, faceBottom=p.chin?.y??.66;
+  const inHeadY=clamp((ny-faceTop)/Math.max(.01,faceBottom-faceTop),0,1);
+  const headW=softWeight(distNorm(nx,ny,faceCenter.x,faceCenter.y,.36,.42));
+  const maxHeadX=.018, maxHeadY=.012;
+  wx += clampMove(headX*(rig.meshStrength||.38)*headW,-maxHeadX,maxHeadX);
+  wy += clampMove(headY*(rig.meshStrength||.38)*headW,-maxHeadY,maxHeadY);
+  wx += clampMove((nx-faceCenter.x)*yaw*.020*headW*(1-inHeadY*.45),-.012,.012);
 
-  // 口は中心を親にして、上下左右が連動して開く。
-  if((v.key||"").startsWith("mouth")){
-    const m=runtime.smooth.mouth*(rig.mouthMeshStrength||.85);
-    if(v.key.includes("Lower"))y += 20*scale*m;
-    if(v.key.includes("Upper"))y -= 3*scale*m;
-    if(v.key==="mouthLeft"||v.key==="mouthLowerL"||v.key==="mouthUpperL")x -= 4*scale*m;
-    if(v.key==="mouthRight"||v.key==="mouthLowerR"||v.key==="mouthUpperR")x += 4*scale*m;
-  }
+  // 目：中心だけでなく、打った上下左右ピンの範囲を楕円ではなく制約付き領域として扱う。
+  const applyEye=(side)=>{
+    const cen=p[`eye${side}Center`], inn=p[`eye${side}CornerIn`], out=p[`eye${side}CornerOut`], up=p[`eye${side}Upper`], low=p[`eye${side}Lower`];
+    if(!cen||!inn||!out||!up||!low)return;
+    const rx=Math.max(Math.abs(out.x-inn.x)*.72,.035);
+    const ry=Math.max(Math.abs(low.y-up.y)*1.55,.025);
+    const d=distNorm(nx,ny,cen.x,cen.y,rx,ry);
+    const w=softWeight(d);
+    if(w<=0)return;
+    const blink=clamp((runtime.smooth.blink||0)*(rig.eyeLayerClose||1)+(rig.eyeSmile||0)*.16,0,.92)*(rig.blinkMeshStrength||.85);
+    // 上下まぶた方向へ畳む。目頭/目尻は固定寄り、中央ほど動く。
+    const across=clamp(Math.abs(nx-cen.x)/rx,0,1);
+    const centerBias=(1-across*.72);
+    const vertical=(ny-cen.y)/ry;
+    const maxClose=ry*.45;
+    if(vertical<0){ wy += clampMove((cen.y-wy)*blink*w*centerBias*.82,-maxClose,maxClose); }
+    else { wy += clampMove((cen.y-wy)*blink*w*centerBias*.62,-maxClose,maxClose); }
+    // 視線風の微小移動。目範囲から外へ出ない。
+    wx += clampMove(yaw*.004*w*centerBias,-.005,.005);
+  };
+  applyEye('L'); applyEye('R');
 
-  // 目は中心へ畳む。上下まぶただけでなく目頭・目尻も少し追従。
-  if((v.key||"").startsWith("eye")){
-    const side=v.key.startsWith("eyeL")?"L":v.key.startsWith("eyeR")?"R":null;
-    const center=side?(p[`eye${side}Center`]||p[side==="L"?"leftEye":"rightEye"]):null;
-    const b=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.22,0,.95)*(rig.blinkMeshStrength||.85)*(rig.blinkShapeStrength??1);
-    if(center){
-      const cx=r.x+center.x*r.w, cy=r.y+center.y*r.h;
-      if(v.key.includes("Upper")) y=lerp(y,cy,b*.86);
-      if(v.key.includes("Lower")) y=lerp(y,cy,b*.78);
-      if(v.key.includes("Corner")) y=lerp(y,cy,b*.22);
-      if(v.key.includes("upper")||v.key.includes("lower")) y=lerp(y,cy,b*.55);
+  // 口：口角は固定寄り、上唇/下唇は上限下限あり。中心点だけで裂かない。
+  const ml=p.mouthLeft, mr=p.mouthRight, mu=p.mouthUpper, md=p.mouthLower, mc=p.mouthCenter;
+  if(ml&&mr&&mu&&md&&mc){
+    const rx=Math.max(Math.abs(mr.x-ml.x)*.75,.035);
+    const ry=Math.max(Math.abs(md.y-mu.y)*1.80,.025);
+    const d=distNorm(nx,ny,mc.x,mc.y,rx,ry);
+    const w=softWeight(d);
+    if(w>0){
+      const open=clamp(runtime.smooth.mouth||0,0,1)*(rig.mouthMeshStrength||.85);
+      const across=clamp(Math.abs(nx-mc.x)/rx,0,1);
+      const cornerLock=clamp(across,.0,1);        // 口角ほど動かさない
+      const centerMove=(1-cornerLock*.82);
+      const upperLimit=ry*.18, lowerLimit=ry*.78, sideLimit=rx*.12;
+      if(ny<mc.y){
+        wy += clampMove(-upperLimit*open*w*centerMove,-upperLimit,upperLimit);
+      }else{
+        wy += clampMove(lowerLimit*open*w*centerMove,-lowerLimit,lowerLimit);
+      }
+      // 横幅は少しだけ。裂け防止。
+      const side=(nx<mc.x?-1:1);
+      wx += clampMove(side*sideLimit*open*w*(1-centerMove*.25)*.28,-sideLimit,sideLimit);
     }
   }
-  return{x,y};
+
+  // 髪：root/tip方式。tip近傍ほど動き、root近傍は固定。
+  const applyHair=(rootName,tipName,phase=0)=>{
+    const root=p[rootName], tip=p[tipName]; if(!root||!tip)return;
+    const len=Math.max(.03,Math.hypot(tip.x-root.x,tip.y-root.y));
+    const vx=tip.x-root.x, vy=tip.y-root.y;
+    const t=clamp(((nx-root.x)*vx+(ny-root.y)*vy)/(len*len),0,1);
+    const lineX=root.x+vx*t, lineY=root.y+vy*t;
+    const d=Math.hypot(nx-lineX,ny-lineY)/Math.max(.025,len*.25);
+    const w=softWeight(d)*t*t;
+    if(w<=0)return;
+    const sway=clamp((runtime.smooth.hairX||0)/(projectState.original?.width||900),-.035,.035)*(rig.hairMeshStrength||.65);
+    wx += sway*w;
+    wy += Math.sin((runtime.t||0)*.07+phase)*.003*w;
+  };
+  applyHair('bangsRootL','bangsTipL',1); applyHair('bangsRootR','bangsTipR',2);
+  applyHair('sideHairRootL','sideHairTipL',3); applyHair('sideHairRootR','sideHairTipR',4); applyHair('backHairRoot','backHairTip',5);
+
+  return {x:r.x+wx*r.w,y:r.y+wy*r.h,u:v.u??v.x,v:v.v??v.y,wx,wy};
 }
 
 function drawMeshAvatar(g,r){
-  // v4.2: 「メッシュだけ表示」ではなく、ピンから作った変形量を実際の絵へ強めに反映する。
-  // まず穴埋めベースを敷き、顔・髪・目・口のレイヤーをピン基準で動かす。
   const img=projectState.original;
-  const parts=projectState.parts||{};
-  const p=projectState.points||{};
-  const rig=projectState.rig;
-  if(!img)return;
-
-  const scale=r.w/img.width;
-  const yaw=runtime.smooth.yaw;
-  const mouth=runtime.smooth.mouth;
-  const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.96);
-  const rot=yaw*rig.headRotate*Math.PI/180;
-
-  // 動きが弱く見えないように、Live側だけ少し見える量へ増幅。
-  const headTx=(runtime.smooth.headX*scale*rig.headBone) + yaw*18*scale;
-  const headTy=runtime.smooth.headY*scale*.55;
-  const neckTx=runtime.smooth.neckX*scale*rig.neckBone;
-  const hairTx=runtime.smooth.hairX*scale*(rig.hairBone + rig.hairMeshStrength*.55);
-  const hairSway=Math.sin(runtime.t*.075)*3.5*scale;
-
-  // ベース。切り抜き済みがあれば穴埋め、なければ元絵。
-  g.drawImage(parts.base_inpainted||projectState.inpainted||img,r.x,r.y,r.w,r.h);
-
-  // 首・体は小さく、顔は大きく動かす。これで「動いてる感」が出る。
-  if(parts.neck && p.neck) drawPart(g,parts.neck,p.neck,r,neckTx,0,rot*.08,1,1,.9);
-  if(parts.face && p.face) drawPart(g,parts.face,p.face,r,headTx,headTy,rot,1-Math.abs(yaw)*.015,1+Math.abs(yaw)*.006,1);
-
-  // 髪は root/tip の考え方に寄せて、顔より遅れて横揺れ。
-  if(parts.front_hair && p.hair){
-    drawPart(g,parts.front_hair,p.hair,r,hairTx,headTy*.25+hairSway,rot*.18,1+Math.abs(yaw)*.01,1,.88);
-  }
-
-  // 目はレイヤー縮小＋閉じ線を両方使う。ピンが効いているのが分かりやすい。
-  if(parts.left_eye && p.leftEye) drawEye(g,parts.left_eye,p.leftEye,r,headTx,headTy,rot,blink);
-  if(parts.right_eye && p.rightEye) drawEye(g,parts.right_eye,p.rightEye,r,headTx,headTy,rot,blink);
-
-  // 口はレイヤー拡大＋口内合成。口パクボタンで明確に動く。
-  if(parts.mouth && p.mouth) drawMouth(g,parts.mouth,p.mouth,r,headTx,headTy,rot,mouth);
-  drawSynthetic(g,r,p,headTx,headTy,rot);
-
-  // 追加の局所メッシュワープ。完全なCubismではないが、ピン周辺の変形を可視化する。
   const mesh=projectState.mesh;
-  if(mesh&&mesh.triangles&&mesh.triangles.length){
-    g.save();
-    g.globalAlpha=.18;
-    mesh.triangles.forEach(t=>{
-      const group=t[3];
-      if(group==="body"||group==="neck"||group==="face"||group==="faceGrid")return;
-      // 変形していない時は重ね描きしない。残像を減らす。
-      if(Math.abs(yaw)<.015 && mouth<.03 && blink<.03 && group!=="hair")return;
-      const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
-      const dv=sv.map(v=>warpedVertex(v,r));
-      drawTexturedTriangle(g,img,r,sv,dv);
-    });
-    g.restore();
-  }
+  if(!img)return;
+  if(!mesh||!mesh.triangles||!mesh.triangles.length){g.drawImage(img,r.x,r.y,r.w,r.h);return;}
+
+  // v45: パーツ切り抜き・穴埋めを使わず、元画像を三角面で全面描画する。
+  // ここが本物のメッシュ描画。各三角形が src UV → dst 変形先へ貼られる。
+  g.save();
+  mesh.triangles.forEach(t=>{
+    const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
+    const dv=sv.map(v=>warpedVertex(v,r));
+    drawTexturedTriangle(g,img,r,sv,dv);
+  });
+  g.restore();
+
+  // 目閉じ・口の補助線だけは、完全な穴埋めではなく上から薄く描く。福笑い感を避けるため強すぎない。
+  const p=projectState.points||{};
+  const yaw=runtime.smooth.yaw||0;
+  const rot=yaw*(projectState.rig?.headRotate||1)*Math.PI/180;
+  const headTx=0, headTy=0;
+  drawSynthetic(g,r,p,headTx,headTy,rot);
 }
 
 function drawTexturedTriangle(g,img,r,src,dst){
