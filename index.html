@@ -93,6 +93,12 @@
       <span id="fps">FPS: --</span>
     </div>
 
+    <div class="tracking-meter">
+      <div><span>顔向き</span><b id="meterYaw">0%</b><i><em id="barYaw"></em></i></div>
+      <div><span>口開き</span><b id="meterMouth">0%</b><i><em id="barMouth"></em></i></div>
+      <div><span>まばたき</span><b id="meterBlink">0%</b><i><em id="barBlink"></em></i></div>
+    </div>
+
     <video id="video" playsinline muted></video>
   </section>
 
@@ -128,11 +134,18 @@
     <label>目線ゆらぎ <span id="eyeWanderVal"></span></label>
     <input id="eyeWander" type="range" min="0" max="30" value="8">
 
-    <h2>補正</h2>
+    <h2>顔トラッキング補正</h2>
+    <label>顔向き増幅 <span id="yawBoostVal"></span></label>
+    <input id="yawBoost" type="range" min="0.5" max="3.5" step="0.1" value="1.8">
     <label>口感度 <span id="mouthSensitivityVal"></span></label>
-    <input id="mouthSensitivity" type="range" min="1" max="8" step="0.1" value="4.0">
+    <input id="mouthSensitivity" type="range" min="1" max="10" step="0.1" value="5.5">
     <label>まばたき感度 <span id="blinkSensitivityVal"></span></label>
-    <input id="blinkSensitivity" type="range" min="1" max="8" step="0.1" value="3.2">
+    <input id="blinkSensitivity" type="range" min="1" max="10" step="0.1" value="4.8">
+    <label>反応速度 <span id="trackingSpeedVal"></span></label>
+    <input id="trackingSpeed" type="range" min="0.05" max="0.45" step="0.01" value="0.18">
+    <label>慣性/ぬるさ <span id="inertiaVal"></span></label>
+    <input id="inertia" type="range" min="0" max="1" step="0.05" value="0.35">
+    <p class="hint">カメラ表情ON後、上のメーターが動けば顔トラッキング入力は取れています。</p>
   </section>
 </main>
 

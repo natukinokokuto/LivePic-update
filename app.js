@@ -18,9 +18,9 @@ const state={
     breath:16,sway:10,tilt:6,micGain:3.0,
     yaw:0,meshPower:48,faceRadius:230,meshDensity:54,meshEnabled:true,
     mouthAmount:58,mouthWide:58,blinkAmount:52,eyeWander:8,
-    mouthSensitivity:4.0,blinkSensitivity:3.2
+    mouthSensitivity:5.5,blinkSensitivity:4.8,yawBoost:1.8,trackingSpeed:0.18,inertia:0.35
   },
-  track:{yaw:0,mouth:0,blink:0},
+  track:{yaw:0,mouth:0,blink:0,rawYaw:0,rawMouth:0,rawBlink:0,hasFace:false},
   smooth:{yaw:0,mouth:0,blink:0,eyeX:0,eyeY:0},
   manual:{talking:0,blinkBoost:0,yawKey:0,y:0},
   view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,dragMoved:false},
@@ -197,7 +197,7 @@ async function toggleCameraTracking(){
     await state.camera.start();
     state.cameraOn=true;
     document.getElementById("cameraBtn").textContent="カメラ表情 ON";
-    document.getElementById("trackingStatus").textContent="Tracking: ON";
+    document.getElementById("trackingStatus").textContent="Tracking: 起動中";
   }catch(e){
     alert("カメラ表情を開始できません: "+e.message);
   }
@@ -210,20 +210,39 @@ function stopCameraTracking(){
   document.getElementById("trackingStatus").textContent="Tracking: OFF";
 }
 function onCameraResults(res){
-  if(!res.multiFaceLandmarks || !res.multiFaceLandmarks[0])return;
+  if(!res.multiFaceLandmarks || !res.multiFaceLandmarks[0]){
+    state.track.hasFace=false;
+    document.getElementById("trackingStatus").textContent="Tracking: 顔なし";
+    return;
+  }
   const lm=res.multiFaceLandmarks[0];
   const dist=(a,b)=>Math.hypot(lm[a].x-lm[b].x,lm[a].y-lm[b].y);
   const eyeW=(dist(33,133)+dist(263,362))/2;
-  const eyeOpen=(dist(159,145)+dist(386,374))/2;
+  const leftEyeOpen=dist(159,145)/(dist(33,133)+.0001);
+  const rightEyeOpen=dist(386,374)/(dist(263,362)+.0001);
+  const eyeOpen=(leftEyeOpen+rightEyeOpen)/2;
+
   const mouthW=dist(78,308);
   const mouthOpen=dist(13,14);
-  const nose=lm[1], centerX=(lm[33].x+lm[263].x)/2;
-  const yaw=clamp((nose.x-centerX)*8,-1,1);
-  const mouth=clamp((mouthOpen/(mouthW+.0001)-.05)*state.controls.mouthSensitivity,0,1);
-  const blink=clamp((.23-(eyeOpen/(eyeW+.0001)))*state.controls.blinkSensitivity,0,1);
+  const mouthRatio=mouthOpen/(mouthW+.0001);
+
+  const nose=lm[1], left=lm[234], right=lm[454];
+  const centerX=(left.x+right.x)/2;
+  const faceW=Math.abs(right.x-left.x)+.0001;
+  const rawYaw=(nose.x-centerX)/faceW;
+
+  const yaw=clamp(rawYaw*5.2*state.controls.yawBoost,-1,1);
+  const mouth=clamp((mouthRatio-.045)*state.controls.mouthSensitivity,0,1);
+  const blink=clamp((.185-eyeOpen)*state.controls.blinkSensitivity,0,1);
+
+  state.track.rawYaw=rawYaw;
+  state.track.rawMouth=mouthRatio;
+  state.track.rawBlink=eyeOpen;
   state.track.yaw=yaw;
   state.track.mouth=mouth;
   state.track.blink=blink;
+  state.track.hasFace=true;
+  document.getElementById("trackingStatus").textContent="Tracking: ON / 顔あり";
 }
 
 function fitCanvas(){const r=document.getElementById("stage").getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=Math.max(1,Math.floor(r.width*d));canvas.height=Math.max(1,Math.floor(r.height*d));canvas.style.width=r.width+"px";canvas.style.height=r.height+"px";ctx.setTransform(d,0,0,d,0,0);}
@@ -395,15 +414,20 @@ function scheduleBlink(){
 }
 function updateMotion(now){
   const c=state.controls;
+  const speed=Number(c.trackingSpeed||0.18);
+  const inertia=Number(c.inertia||0.35);
+
   let targetYaw=c.yaw/100;
   if(state.autoYaw)targetYaw=Math.sin(state.t*.024)*.75;
   if(state.cameraOn)targetYaw=state.track.yaw;
   targetYaw+=state.manual.yawKey*.85;
-  state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),.10);
+  const yawEase=clamp(speed*(1.15-inertia*.45),.04,.5);
+  state.smooth.yaw=lerp(state.smooth.yaw,clamp(targetYaw,-1,1),yawEase);
 
   let targetMouth=Math.max(state.mic.level,state.manual.talking);
   if(state.cameraOn)targetMouth=Math.max(targetMouth,state.track.mouth);
-  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,.32);
+  const mouthEase=clamp(speed*2.0,.08,.75);
+  state.smooth.mouth=lerp(state.smooth.mouth,targetMouth,mouthEase);
   state.manual.talking*=.82;
 
   let targetBlink=state.manual.blinkBoost;
@@ -414,11 +438,30 @@ function updateMotion(now){
     else scheduleBlink();
     state.doubleBlink=false;
   }
-  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.45);
+  state.smooth.blink=lerp(state.smooth.blink,targetBlink,.52);
   state.manual.blinkBoost*=.56;
 
-  state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)+Math.sin(state.t*.007)*.5,.03);
+  // eyes intentionally lag a little behind head movement
+  state.smooth.eyeX=lerp(state.smooth.eyeX,Math.sin(state.t*.019)+Math.sin(state.t*.007)*.5-state.smooth.yaw*.45,.035);
   state.smooth.eyeY=lerp(state.smooth.eyeY,Math.sin(state.t*.013),.03);
+
+  updateTrackingMeters();
+}
+
+
+function updateTrackingMeters(){
+  const yaw=Math.round(Math.abs(state.smooth.yaw)*100);
+  const mouth=Math.round(clamp(state.smooth.mouth,0,1)*100);
+  const blink=Math.round(clamp(state.smooth.blink,0,1)*100);
+  const set=(id,val)=>{
+    const t=document.getElementById("meter"+id);
+    const b=document.getElementById("bar"+id);
+    if(t)t.textContent=val+"%";
+    if(b)b.style.width=val+"%";
+  };
+  set("Yaw",yaw);
+  set("Mouth",mouth);
+  set("Blink",blink);
 }
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
@@ -437,7 +480,9 @@ function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v08");if
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(id==="micGain"||id==="mouthSensitivity"||id==="blinkSensitivity")v=Number(v).toFixed(1);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(id==="micGain"||id==="mouthSensitivity"||id==="blinkSensitivity"||id==="yawBoost")v=Number(v).toFixed(1);
+      if(id==="trackingSpeed"||id==="inertia")v=Number(v).toFixed(2);
+      lab.textContent=v;}
   });
 }
 function loop(now){
