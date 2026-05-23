@@ -30,7 +30,7 @@ const colors={
 };
 
 const projectState={
-  version:"4.1",
+  version:"4.2",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -521,7 +521,16 @@ function applyRigPreset(){Object.assign(projectState.rig,{headBone:.75,neckBone:
 function applyExpression(name){projectState.rig.eyeSmile=name==="smile"?.55:.10;updateControls();syncToLive(name==="smile"?"笑顔":"通常");}
 function testMouth(){runtime.manual.talking=1.8;runtime.manual.mouthUntil=performance.now()+projectState.rig.mouthHold*1000;runtime.smooth.mouth=1;}
 function testBlink(){runtime.manual.blinkBoost=1.6;runtime.manual.blinkUntil=performance.now()+projectState.rig.blinkHold*1000;runtime.smooth.blink=1;}
-function testMotion(){testMouth();testBlink();runtime.autoYaw=true;updateAutoYawButtons();}
+function testMotion(){
+  testMouth();
+  testBlink();
+  runtime.autoYaw=true;
+  runtime.smooth.yaw=.32;
+  runtime.smooth.headX=18;
+  runtime.smooth.hairX=-16;
+  updateAutoYawButtons();
+  setStatus("rigStatus","動作テスト中：顔向き・口・瞬き・髪揺れを強めに反映");
+}
 function resetMotion(){runtime.smooth={yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0};runtime.manual={talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0};runtime.autoYaw=false;updateAutoYawButtons();}
 function toggleAutoYaw(){runtime.autoYaw=!runtime.autoYaw;updateAutoYawButtons();}
 function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
@@ -659,23 +668,63 @@ function warpedVertex(v,r){
 }
 
 function drawMeshAvatar(g,r){
+  // v4.2: 「メッシュだけ表示」ではなく、ピンから作った変形量を実際の絵へ強めに反映する。
+  // まず穴埋めベースを敷き、顔・髪・目・口のレイヤーをピン基準で動かす。
   const img=projectState.original;
-  g.drawImage(img,r.x,r.y,r.w,r.h);
+  const parts=projectState.parts||{};
+  const p=projectState.points||{};
+  const rig=projectState.rig;
+  if(!img)return;
+
+  const scale=r.w/img.width;
+  const yaw=runtime.smooth.yaw;
+  const mouth=runtime.smooth.mouth;
+  const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.96);
+  const rot=yaw*rig.headRotate*Math.PI/180;
+
+  // 動きが弱く見えないように、Live側だけ少し見える量へ増幅。
+  const headTx=(runtime.smooth.headX*scale*rig.headBone) + yaw*18*scale;
+  const headTy=runtime.smooth.headY*scale*.55;
+  const neckTx=runtime.smooth.neckX*scale*rig.neckBone;
+  const hairTx=runtime.smooth.hairX*scale*(rig.hairBone + rig.hairMeshStrength*.55);
+  const hairSway=Math.sin(runtime.t*.075)*3.5*scale;
+
+  // ベース。切り抜き済みがあれば穴埋め、なければ元絵。
+  g.drawImage(parts.base_inpainted||projectState.inpainted||img,r.x,r.y,r.w,r.h);
+
+  // 首・体は小さく、顔は大きく動かす。これで「動いてる感」が出る。
+  if(parts.neck && p.neck) drawPart(g,parts.neck,p.neck,r,neckTx,0,rot*.08,1,1,.9);
+  if(parts.face && p.face) drawPart(g,parts.face,p.face,r,headTx,headTy,rot,1-Math.abs(yaw)*.015,1+Math.abs(yaw)*.006,1);
+
+  // 髪は root/tip の考え方に寄せて、顔より遅れて横揺れ。
+  if(parts.front_hair && p.hair){
+    drawPart(g,parts.front_hair,p.hair,r,hairTx,headTy*.25+hairSway,rot*.18,1+Math.abs(yaw)*.01,1,.88);
+  }
+
+  // 目はレイヤー縮小＋閉じ線を両方使う。ピンが効いているのが分かりやすい。
+  if(parts.left_eye && p.leftEye) drawEye(g,parts.left_eye,p.leftEye,r,headTx,headTy,rot,blink);
+  if(parts.right_eye && p.rightEye) drawEye(g,parts.right_eye,p.rightEye,r,headTx,headTy,rot,blink);
+
+  // 口はレイヤー拡大＋口内合成。口パクボタンで明確に動く。
+  if(parts.mouth && p.mouth) drawMouth(g,parts.mouth,p.mouth,r,headTx,headTy,rot,mouth);
+  drawSynthetic(g,r,p,headTx,headTy,rot);
+
+  // 追加の局所メッシュワープ。完全なCubismではないが、ピン周辺の変形を可視化する。
   const mesh=projectState.mesh;
-  if(!mesh||!mesh.triangles.length)return;
-  g.save();
-  g.globalAlpha=.72;
-  mesh.triangles.forEach(t=>{
-    const group=t[3];
-    if(group==="body")return;
-    const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
-    const dv=sv.map(v=>warpedVertex(v,r));
-    drawTexturedTriangle(g,img,r,sv,dv);
-  });
-  g.restore();
-  const p=projectState.points, rig=projectState.rig, scale=r.w/projectState.original.width;
-  const blink=clamp(runtime.smooth.blink*rig.eyeLayerClose+rig.eyeSmile*.55,0,.94);
-  drawSynthetic(g,r,p,runtime.smooth.headX*scale*rig.headBone,runtime.smooth.headY*scale*.45,runtime.smooth.yaw*rig.headRotate*Math.PI/180);
+  if(mesh&&mesh.triangles&&mesh.triangles.length){
+    g.save();
+    g.globalAlpha=.34;
+    mesh.triangles.forEach(t=>{
+      const group=t[3];
+      if(group==="body"||group==="neck")return;
+      // 変形していない時は重ね描きしない。残像を減らす。
+      if(Math.abs(yaw)<.015 && mouth<.03 && blink<.03 && group!=="hair")return;
+      const sv=t.slice(0,3).map(i=>mesh.vertices[i]);
+      const dv=sv.map(v=>warpedVertex(v,r));
+      drawTexturedTriangle(g,img,r,sv,dv);
+    });
+    g.restore();
+  }
 }
 
 function drawTexturedTriangle(g,img,r,src,dst){
@@ -763,12 +812,12 @@ function loop(now){
 }
 
 function updateMotion(now){
-  const targetYaw=runtime.autoYaw?Math.sin(runtime.t*.025)*.42:0;
+  const targetYaw=runtime.autoYaw?Math.sin(runtime.t*.035)*.72:0;
   runtime.smooth.yaw=lerp(runtime.smooth.yaw,targetYaw,.12);
-  runtime.smooth.headX=lerp(runtime.smooth.headX,targetYaw*28,.14);
+  runtime.smooth.headX=lerp(runtime.smooth.headX,targetYaw*48,.14);
   runtime.smooth.headY=lerp(runtime.smooth.headY,Math.sin(runtime.t*.018)*1.4,.08);
-  runtime.smooth.neckX=lerp(runtime.smooth.neckX,targetYaw*9,.08);
-  runtime.smooth.hairX=lerp(runtime.smooth.hairX,-targetYaw*18,.07);
+  runtime.smooth.neckX=lerp(runtime.smooth.neckX,targetYaw*18,.08);
+  runtime.smooth.hairX=lerp(runtime.smooth.hairX,-targetYaw*42,.07);
   let mouth=runtime.manual.talking;
   if(now<runtime.manual.mouthUntil)mouth=1;
   runtime.smooth.mouth=lerp(runtime.smooth.mouth,mouth,.35);
