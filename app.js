@@ -32,7 +32,7 @@ const colors={
 };
 
 const projectState={
-  version:"4.8",
+  version:"5.0",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -950,11 +950,11 @@ function generateMesh(showStatus=true){
   ].forEach(e=>edgeByPin(e[0],e[1],e[2]));
 
   projectState.mesh={
-    version:'v49_png_mask_pin_local_mesh',
+    version:'v50_transparent_png_base_mesh',
     vertices,triangles,edges,structures,
-    notes:'PNG/背景付き画像を外周ピンでキャラマスク化。四角背景を描画対象から外し、外周ピン内側と部位ピン線だけにメッシュ生成。'
+    notes:'透過PNGサンプルを正式基準化。alpha=0は描画・メッシュ対象外。キャラ領域と部位ピン線をメッシュ生成の基準にする。'
   };
-  if(showStatus)setStatus('cutStatus',`v49 PNGマスク＋局所メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length}`);
+  if(showStatus)setStatus('cutStatus',`v50 透過PNG基準＋局所メッシュ生成OK: 面${triangles.length} / 頂点${vertices.length} / 制御線${structures.length}`);
   updateProjectReadout();
 }
 
