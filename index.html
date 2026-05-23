@@ -3,27 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>立ち絵モーションLite - Prototype</title>
+  <title>LivePic - Working Alpha</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <header class="app-header">
     <div>
-      <h1>立ち絵モーションLite</h1>
-      <p>1枚絵を読み込んで、疑似的に“生きてる感”を出す試作アプリ</p>
+      <h1>LivePic</h1>
+      <p>1枚絵を読み込んで、まばたき・口パク・ゆらぎで“配信っぽく動く”試作アプリ</p>
     </div>
-    <div class="pill">Prototype v0.1</div>
+    <div class="header-actions">
+      <button id="openObsBtn" class="primary">OBS表示</button>
+      <span class="pill">Working Alpha v0.2</span>
+    </div>
   </header>
 
   <main class="layout">
     <section class="panel">
       <h2>1. 画像読み込み</h2>
-      <input id="fileInput" type="file" accept="image/*" />
-      <div class="hint">
-        PNG推奨。背景透過PNGならOBSでも使いやすいです。
-      </div>
+      <label class="fileBox">
+        <input id="fileInput" type="file" accept="image/*" />
+        <span>画像を選択 / ドロップ</span>
+      </label>
+      <div id="fileName" class="hint">PNG推奨。透過PNGならOBS向き。</div>
 
-      <h2>2. 指定モード</h2>
+      <h2>2. ポイント指定</h2>
       <div class="tool-grid">
         <button class="tool active" data-point="face">顔中心</button>
         <button class="tool" data-point="leftEye">左目</button>
@@ -34,28 +38,44 @@
       </div>
       <p class="hint">プレビュー上をクリックすると、選択中のポイントを配置できます。</p>
 
-      <h2>3. 保存/読込</h2>
+      <h2>3. プリセット</h2>
       <div class="row">
-        <button id="saveBtn">設定を書き出し</button>
-        <button id="loadBtn">設定を読み込み</button>
+        <button id="autoPointBtn">ポイント自動配置</button>
+        <button id="resetMotionBtn">動き初期化</button>
       </div>
-      <textarea id="settingsBox" placeholder="ここに設定JSONが出ます / 貼り付けて読み込み"></textarea>
+
+      <h2>4. 保存/復元</h2>
+      <div class="row">
+        <button id="saveLocalBtn">ブラウザ保存</button>
+        <button id="loadLocalBtn">保存を復元</button>
+      </div>
+      <div class="row">
+        <button id="exportBtn">JSON書き出し</button>
+        <button id="importBtn">JSON読込</button>
+      </div>
+      <textarea id="settingsBox" placeholder="JSON設定を書き出し/貼り付け"></textarea>
     </section>
 
     <section class="stage-card">
       <div class="stage-toolbar">
         <button id="toggleMotionBtn">モーション ON</button>
+        <button id="micBtn" class="primary">マイク口パク OFF</button>
         <button id="blinkBtn">まばたき</button>
         <button id="talkBtn">口パク</button>
-        <button id="obsBtn">OBS風表示</button>
       </div>
+
       <div id="stage" class="stage">
         <canvas id="canvas"></canvas>
-        <div id="dropMessage">画像を読み込んでください</div>
+        <div id="dropMessage">
+          <strong>画像を読み込んでください</strong>
+          <span>読み込むだけでも自動ポイントで動きます</span>
+        </div>
       </div>
+
       <div class="readout">
-        <span>操作: 画像上クリックでポイント配置</span>
         <span id="currentTool">選択中: 顔中心</span>
+        <span id="micStatus">Mic: OFF</span>
+        <span id="fps">FPS: --</span>
       </div>
     </section>
 
@@ -63,34 +83,43 @@
       <h2>動き調整</h2>
 
       <label>呼吸・上下揺れ <span id="breathVal">16</span></label>
-      <input id="breath" type="range" min="0" max="50" value="16" />
+      <input id="breath" type="range" min="0" max="60" value="16" />
 
       <label>左右ゆらぎ <span id="swayVal">10</span></label>
-      <input id="sway" type="range" min="0" max="40" value="10" />
+      <input id="sway" type="range" min="0" max="50" value="10" />
 
-      <label>顔の傾き <span id="tiltVal">5</span></label>
-      <input id="tilt" type="range" min="0" max="18" value="5" />
+      <label>顔の傾き <span id="tiltVal">6</span></label>
+      <input id="tilt" type="range" min="0" max="22" value="6" />
 
-      <label>口パク量 <span id="mouthVal">18</span></label>
-      <input id="mouthAmount" type="range" min="0" max="50" value="18" />
+      <label>口パク量 <span id="mouthVal">24</span></label>
+      <input id="mouthAmount" type="range" min="0" max="70" value="24" />
 
-      <label>まばたき潰し <span id="blinkVal">12</span></label>
-      <input id="blinkAmount" type="range" min="0" max="35" value="12" />
+      <label>まばたき潰し <span id="blinkVal">16</span></label>
+      <input id="blinkAmount" type="range" min="0" max="45" value="16" />
 
-      <h2>トラッキング仮操作</h2>
-      <p class="hint">まずはキーボード/ボタンで疑似確認。次段階でWebカメラ連動を追加。</p>
+      <label>自動まばたき間隔 <span id="blinkIntervalVal">4.5秒</span></label>
+      <input id="blinkInterval" type="range" min="2" max="9" step="0.5" value="4.5" />
+
+      <label>マイク感度 <span id="micGainVal">3.0</span></label>
+      <input id="micGain" type="range" min="0.5" max="8" step="0.1" value="3.0" />
+
+      <h2>キーボード操作</h2>
       <div class="key-help">
-        <span>A/D: 顔傾き</span>
-        <span>W/S: 上下</span>
-        <span>Space: 口パク</span>
-        <span>B: まばたき</span>
+        <span>A/D：顔傾き</span>
+        <span>W/S：上下移動</span>
+        <span>Space：口パク</span>
+        <span>B：まばたき</span>
       </div>
+
+      <h2>OBS用</h2>
+      <p class="hint">GitHub Pages化したら、OBSのブラウザソースには通常ページを開いて「OBS表示」を押すか、URL末尾に <code>?obs=1</code> を付けてください。</p>
+      <button id="copyObsHintBtn">OBS用URLヒントをコピー</button>
     </section>
   </main>
 
   <div id="obsOverlay" class="obs hidden">
     <canvas id="obsCanvas"></canvas>
-    <button id="closeObs">戻る</button>
+    <button id="closeObs">編集へ戻る</button>
   </div>
 
   <script src="./app.js"></script>
