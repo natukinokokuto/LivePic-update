@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.1 Live2D Bone Rig</title>
+  <title>LivePic v3.2 Auto Parts Generator</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,12 +12,12 @@
 <header class="app-header">
   <div>
     <h1>LivePic</h1>
-    <p>骨・パーツ・表情プリセットを追加したLive2D寄せ版。</p>
+    <p>アプリ内で自動パーツ分けPNGを生成する版。</p>
   </div>
   <div class="header-actions">
     <button id="presetBtn" class="primary">Live2D寄せプリセット</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.1 Bone Rig</span>
+    <span class="pill">v3.2 Auto Parts</span>
   </div>
 </header>
 
@@ -76,6 +76,18 @@
       <button id="exprSmileBtn">表情: 笑顔</button>
       <button id="exprResetBtn">表情: 通常</button>
     </div>
+    <h2>自動パーツ分けPNG</h2>
+    <div class="row">
+      <button id="autoPartsBtn" class="primary">自動パーツ分け生成</button>
+      <button id="downloadPartsBtn">パーツPNG保存</button>
+    </div>
+    <div class="row">
+      <button id="applyPartsRigBtn">生成パーツでリグ適用</button>
+      <button id="previewPartsBtn">パーツ確認</button>
+    </div>
+    <div id="partsStatus" class="hint">顔・髪・目・口・首・体・穴埋めベースをアプリ内で生成します。</div>
+    <div id="partsPreview" class="parts-preview"></div>
+
     <div id="maskStatus" class="hint">顔・目・口・髪の疑似マスクを作って、元絵の穴を周囲色で埋めます。</div>
 
     <h2>保存/復元</h2>

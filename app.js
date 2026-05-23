@@ -12,7 +12,7 @@ const video=document.getElementById("video");
 
 const state={
   image:null,imageDataUrl:"",imageName:"",
-  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,
+  tool:"face",motion:true,obs:false,debug:true,showMeshLines:false,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,showMasks:true,layers:null,parts:null,partsPreviewOpen:false,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
     meshEnabled:true,safeUnderlay:true,meshOpacity:0.82,partWeights:true,partSeparation:0.45,live2dLayerMode:true,layerOpacity:0.72,safeDeform:true,cutoutLayerMode:true,inpaintBackground:true,maskFeather:18,inpaintStrength:0.85,showPins:true,showGuideCircles:true,showMaskOverlay:true,seamBlend:0.55,contourMaskMode:true,mouthEdgeSensitivity:1.8,eyeEdgeSensitivity:1.7,contourGrow:8,contourSmooth:6,skinSampleRadius:24,meshDensity:34,globalPower:1.15,faceRadius:220,yawBoost:1.55,manualYaw:0,
@@ -73,7 +73,7 @@ function wire(){
   document.querySelectorAll(".tool").forEach(b=>b.onclick=()=>selectTool(b));
   document.getElementById("autoPointsBtn").onclick=autoPoints;
   document.getElementById("buildMasksBtn").onclick=buildAutoMasksAndLayers;
-  document.getElementById("clearMasksBtn").onclick=()=>{state.layers=null;setMaskStatus("マスク解除しました","warn");};
+  document.getElementById("clearMasksBtn").onclick=()=>{state.layers=null; state.parts=null; renderPartsPreview();setMaskStatus("マスク解除しました","warn");};
   document.getElementById("toggleMaskViewBtn").onclick=()=>{state.showMasks=!state.showMasks;state.controls.showMaskOverlay=state.showMasks;document.getElementById("toggleMaskViewBtn").textContent=state.showMasks?"マスク表示 ON":"マスク表示 OFF";updateLabels();};
   document.getElementById("togglePinsBtn").onclick=()=>{state.controls.showPins=!state.controls.showPins;document.getElementById("togglePinsBtn").textContent=state.controls.showPins?"ピン表示 ON":"ピン表示 OFF";updateLabels();};
   document.getElementById("hideAllGuidesBtn").onclick=hideAllGuides;
@@ -82,6 +82,10 @@ function wire(){
   document.getElementById("analyzeEyesBtn").onclick=()=>rebuildSpecificContour("eyes");
   document.getElementById("sampleRigBtn").onclick=applySampleRigPreset;
   document.getElementById("forceMotionBtn").onclick=()=>{state.manual.talking=1.6;triggerBlink(true);state.autoYaw=true;document.getElementById("autoYawBtn").textContent="顔向き自動 ON";};
+  document.getElementById("autoPartsBtn").onclick=generateAutoParts;
+  document.getElementById("downloadPartsBtn").onclick=downloadGeneratedParts;
+  document.getElementById("applyPartsRigBtn").onclick=applyGeneratedPartsRig;
+  document.getElementById("previewPartsBtn").onclick=()=>{state.partsPreviewOpen=!state.partsPreviewOpen;renderPartsPreview();};
   document.getElementById("exprSmileBtn").onclick=()=>applyExpression("smile");
   document.getElementById("exprResetBtn").onclick=()=>applyExpression("neutral");
   document.getElementById("resetViewBtn").onclick=()=>{state.view.zoom=1;state.view.panX=0;state.view.panY=0;updateZoomUi();};
@@ -331,7 +335,7 @@ function loadImage(url,name,auto){
     setDebugStatus("image","OK "+img.width+"x"+img.height);
     if(drop) drop.style.display="none";
     if(auto) autoPoints();
-    state.layers=null;
+    state.layers=null; state.parts=null; renderPartsPreview();
     setTimeout(()=>{ buildAutoMasksAndLayers(false); }, 80);
     saveLocal();
   };
@@ -490,6 +494,166 @@ function setMaskStatus(text,kind="good"){
   el.textContent=text;
   el.className="hint "+kind;
 }
+
+function setPartsStatus(text,kind="good"){
+  const el=document.getElementById("partsStatus");
+  if(!el)return;
+  el.textContent=text;
+  el.className="hint "+kind;
+}
+
+function generateAutoParts(){
+  if(!state.image){
+    setPartsStatus("画像がありません","bad");
+    return;
+  }
+  try{
+    // First build masks/layers using current detection settings.
+    buildAutoMasksAndLayers(false);
+    const L=state.layers;
+    if(!L){
+      setPartsStatus("レイヤー生成に失敗しました","bad");
+      return;
+    }
+    const p=normPoints();
+    const w=state.image.width, h=state.image.height;
+    const src=document.createElement("canvas");
+    src.width=w; src.height=h;
+    src.getContext("2d").drawImage(state.image,0,0);
+
+    const masks=L.masks;
+    const parts={
+      base_inpainted: cloneCanvas(L.inpainted),
+      original: cloneCanvas(src),
+      face: cutLayer(src,masks.face),
+      front_hair: cutLayer(src,masks.hair),
+      back_hair: makeBackHairPart(src,masks.hair,masks.face),
+      left_eye: cutLayer(src,masks.leftEye),
+      right_eye: cutLayer(src,masks.rightEye),
+      mouth: cutLayer(src,masks.mouth),
+      neck: cutLayer(src,masks.neck),
+      body: makeBodyPart(src,p),
+      combined_preview: makePartsCombinedPreview(src,L)
+    };
+
+    state.parts=parts;
+    state.partsPreviewOpen=true;
+    renderPartsPreview();
+    setPartsStatus("自動パーツ分けPNGを生成しました","good");
+  }catch(err){
+    console.error(err);
+    setPartsStatus("自動パーツ分けエラー: "+err.message,"bad");
+  }
+}
+
+function cloneCanvas(src){
+  const c=document.createElement("canvas");
+  c.width=src.width;c.height=src.height;
+  c.getContext("2d").drawImage(src,0,0);
+  return c;
+}
+
+function makeBackHairPart(src,hairMask,faceMask){
+  const c=cutLayer(src,hairMask);
+  // remove face-ish area from back hair to separate front face from surrounding hair
+  const g=c.getContext("2d");
+  g.globalCompositeOperation="destination-out";
+  g.globalAlpha=0.55;
+  g.drawImage(faceMask,0,0);
+  g.globalAlpha=1;
+  g.globalCompositeOperation="source-over";
+  return c;
+}
+
+function makeBodyPart(src,p){
+  const c=document.createElement("canvas");
+  c.width=src.width;c.height=src.height;
+  const mask=createMask(src.width,src.height);
+  const g=mask.getContext("2d");
+  g.fillStyle="#fff";
+  const y0=Math.max(0,(p.neck.y-0.02)*src.height);
+  g.fillRect(0,y0,src.width,src.height-y0);
+  return cutLayer(src,mask);
+}
+
+function makePartsCombinedPreview(src,L){
+  const c=document.createElement("canvas");
+  c.width=src.width;c.height=src.height;
+  const g=c.getContext("2d");
+  g.drawImage(L.inpainted,0,0);
+  g.drawImage(L.neckLayer,0,0);
+  g.drawImage(L.faceLayer,0,0);
+  g.drawImage(L.hairLayer,0,0);
+  g.drawImage(L.leftEyeLayer,0,0);
+  g.drawImage(L.rightEyeLayer,0,0);
+  g.drawImage(L.mouthLayer,0,0);
+  return c;
+}
+
+function renderPartsPreview(){
+  const box=document.getElementById("partsPreview");
+  if(!box)return;
+  box.innerHTML="";
+  if(!state.partsPreviewOpen || !state.parts)return;
+  Object.entries(state.parts).forEach(([name,canvas])=>{
+    const card=document.createElement("div");
+    card.className="part-card";
+    const img=document.createElement("img");
+    img.src=canvas.toDataURL("image/png");
+    const label=document.createElement("div");
+    label.textContent=name;
+    card.appendChild(img);
+    card.appendChild(label);
+    box.appendChild(card);
+  });
+}
+
+function downloadGeneratedParts(){
+  if(!state.parts){
+    setPartsStatus("先に自動パーツ分け生成を押してください","warn");
+    return;
+  }
+  Object.entries(state.parts).forEach(([name,canvas],i)=>{
+    setTimeout(()=>{
+      const a=document.createElement("a");
+      a.href=canvas.toDataURL("image/png");
+      a.download=`livepic_part_${name}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    },i*160);
+  });
+  setPartsStatus("パーツPNG保存を開始しました。ブラウザの複数DL許可が必要な場合があります","good");
+}
+
+function applyGeneratedPartsRig(){
+  if(!state.parts){
+    generateAutoParts();
+  }
+  Object.assign(state.controls,{
+    cutoutLayerMode:true,
+    live2dLayerMode:true,
+    boneRigMode:true,
+    safeDeform:true,
+    meshOpacity:0.45,
+    globalPower:0.42,
+    headBone:0.78,
+    neckBone:0.40,
+    bodyBone:0.12,
+    hairBone:0.70,
+    mouthLayerOpen:1.25,
+    mouthLayerDrop:26,
+    eyeLayerClose:1.25,
+    eyeLayerFollow:0.48,
+    mouthCloseSnap:0.72
+  });
+  state.showMasks=false;
+  state.showMeshLines=false;
+  state.debug=false;
+  updateLabels();
+  setPartsStatus("生成パーツ用のリグ設定を適用しました","good");
+}
+
 
 function hideAllGuides(){
   state.showMasks=false;
@@ -1250,10 +1414,10 @@ function openObs(q){
   fitObs();
 }
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"3.1",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"3.2",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v31",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v31");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v32",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v32");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
