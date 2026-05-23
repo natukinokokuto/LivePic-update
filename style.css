@@ -17,3 +17,20 @@ label{display:flex;justify-content:space-between;gap:10px;margin-top:10px;color:
 .obs{position:fixed;inset:0;background:transparent;z-index:99}.obs canvas{width:100vw;height:100vh}.obs button{position:absolute;right:16px;top:16px;width:auto;background:rgba(0,0,0,.58)}.hidden{display:none!important}
 body.obs-mode{background:transparent;overflow:hidden}body.obs-mode .app-header,body.obs-mode .layout{display:none}body.obs-mode #obsOverlay{display:block!important}body.obs-mode #closeObsBtn{display:none}
 @media(max-width:1150px){.layout{grid-template-columns:1fr}.stage{min-height:560px}}
+
+.debug-status{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+  font-size:12px;
+  color:var(--muted);
+}
+.debug-status span{
+  padding:8px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:rgba(255,255,255,.035);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}

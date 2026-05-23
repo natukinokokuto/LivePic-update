@@ -15,7 +15,7 @@ const state={
   tool:"face",motion:true,obs:false,debug:true,showMeshLines:true,autoYaw:false,cameraOn:false,faceMesh:null,camera:null,
   points:{face:null,leftEye:null,rightEye:null,mouth:null,chin:null,neck:null,body:null,hair:null},
   controls:{
-    meshEnabled:true,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.85,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
     headShift:72,faceSquash:0.32,cheekPower:76,noseShift:58,chinFollow:74,hairLag:0.72,neckLag:0.56,
     mouthSensitivity:10.5,mouthOpenPower:175,mouthRadius:110,jawDrop:120,
     blinkSensitivity:10.0,blinkPower:135,eyeRadius:90,
@@ -51,12 +51,18 @@ init();
 function init(){
   wire();
   fitCanvas();fitObs();updateLabels();updateZoomUi();scheduleBlink();
-  const restored=restoreLocal(false);
-  if(!restored) loadSample();
+  loadSample();
   setTimeout(()=>{ if(!state.image) loadSample(); }, 800);
   if(new URLSearchParams(location.search).get("obs")==="1")openObs(true);
   requestAnimationFrame(loop);
 }
+
+function setDebugStatus(kind,text){
+  const id = kind === "image" ? "imageStatus" : kind === "mesh" ? "meshStatus" : "renderStatus";
+  const el = document.getElementById(id);
+  if(el) el.textContent = (kind === "image" ? "Image: " : kind === "mesh" ? "Mesh: " : "Render: ") + text;
+}
+
 
 function wire(){
   window.addEventListener("resize",()=>{fitCanvas();fitObs();});
@@ -117,7 +123,7 @@ function wire(){
 
 function applyPreset(){
   Object.assign(state.controls,{
-    meshEnabled:true,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
+    meshEnabled:true,safeUnderlay:true,meshOpacity:0.85,meshDensity:36,globalPower:2.2,faceRadius:270,yawBoost:3.2,manualYaw:0,
     headShift:72,faceSquash:0.32,cheekPower:76,noseShift:58,chinFollow:74,hairLag:0.72,neckLag:0.56,
     mouthSensitivity:10.5,mouthOpenPower:175,mouthRadius:110,jawDrop:120,
     blinkSensitivity:10.0,blinkPower:135,eyeRadius:90,
@@ -246,10 +252,12 @@ function loadImage(url,name,auto){
   const status=document.getElementById("status");
   const drop=document.getElementById("dropMessage");
   if(status) status.textContent="画像読み込み中: "+name;
+  setDebugStatus("image","loading");
   const img=new Image();
   img.onload=()=>{
     if(!img.width || !img.height){
       if(status) status.textContent="画像読み込み失敗: サイズを取得できません";
+      setDebugStatus("image","size error");
       if(drop){drop.style.display="block";drop.textContent="画像読み込み失敗";}
       return;
     }
@@ -257,12 +265,14 @@ function loadImage(url,name,auto){
     state.imageDataUrl=url;
     state.imageName=name;
     if(status) status.textContent="画像読み込みOK: "+name+" / "+img.width+"x"+img.height;
+    setDebugStatus("image","OK "+img.width+"x"+img.height);
     if(drop) drop.style.display="none";
     if(auto) autoPoints();
     saveLocal();
   };
   img.onerror=()=>{
     if(status) status.textContent="画像読み込み失敗: "+name;
+    setDebugStatus("image","load error");
     if(drop){drop.style.display="block";drop.textContent="画像を読み込めませんでした";}
   };
   img.src=url;
@@ -355,21 +365,48 @@ function placePoint(e){if(!state.image)return;const d=canvas.getBoundingClientRe
 function draw(g,w,h,editor){
   g.setTransform(1,0,0,1,0,0);
   g.clearRect(0,0,w,h);
-  if(!state.image)return;
+  if(!state.image){
+    setDebugStatus("render","no image");
+    return;
+  }
   g.imageSmoothingEnabled=true;
   g.imageSmoothingQuality="high";
   const r=imageRect(w,h,editor);
-  if(!state.controls.meshEnabled){
+
+  // Display guarantee: always draw the original image first if enabled.
+  if(state.controls.safeUnderlay || !state.controls.meshEnabled){
+    g.save();
+    g.globalAlpha = state.controls.meshEnabled ? 0.45 : 1.0;
     g.drawImage(state.image,r.x,r.y,r.w,r.h);
-  }else{
-    drawWarpedMesh(g,r);
+    g.restore();
   }
+
+  if(state.controls.meshEnabled){
+    try{
+      g.save();
+      g.globalAlpha = Number(state.controls.meshOpacity ?? 0.85);
+      drawWarpedMesh(g,r);
+      g.restore();
+      setDebugStatus("mesh","OK");
+    }catch(err){
+      console.error("mesh render failed", err);
+      setDebugStatus("mesh","ERROR");
+      g.save();
+      g.globalAlpha = 1.0;
+      g.drawImage(state.image,r.x,r.y,r.w,r.h);
+      g.restore();
+    }
+  }else{
+    setDebugStatus("mesh","OFF");
+  }
+
+  setDebugStatus("render","OK");
   if(state.debug&&editor)drawGuides(g,r);
   if(editor)drawPoints(g,r);
 }
 
 function drawWarpedMesh(g,r){
-  const n=Math.floor(state.controls.meshDensity);
+  const n=Math.max(8, Math.floor(state.controls.meshDensity));
   const cols=n;
   const rows=Math.max(16,Math.floor(n*state.image.height/state.image.width));
   const verts=[];
@@ -611,15 +648,15 @@ function updateMeters(){
 
 function openObs(q){state.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");if(q)document.body.classList.add("obs-mode");fitObs();}
 function closeObs(){state.obs=false;document.getElementById("obsOverlay").classList.add("hidden");}
-function settings(){return{app:"LivePic",version:"2.3",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
+function settings(){return{app:"LivePic",version:"2.4",imageName:state.imageName,imageDataUrl:state.imageDataUrl,points:state.points,controls:state.controls};}
 function applySettings(d){if(d.points)state.points=d.points;if(d.controls)Object.assign(state.controls,d.controls);updateLabels();if(d.imageDataUrl)loadImage(d.imageDataUrl,d.imageName||"restored",false);}
-function saveLocal(){try{localStorage.setItem("livepic_v23",JSON.stringify(settings()));}catch(e){}}
-function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v23");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
+function saveLocal(){try{localStorage.setItem("livepic_v24",JSON.stringify(settings()));}catch(e){}}
+function restoreLocal(show){try{const raw=localStorage.getItem("livepic_v24");if(!raw){if(show)alert("保存がありません");return false;}applySettings(JSON.parse(raw));if(show)alert("復元しました");return true;}catch(e){if(show)alert("復元失敗");return false;}}
 
 function updateLabels(){
   Object.keys(state.controls).forEach(id=>{
     const el=document.getElementById(id);if(el){if(el.type==="checkbox")el.checked=!!state.controls[id];else el.value=state.controls[id];}
-    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
+    const lab=document.getElementById(id+"Val");if(lab){let v=state.controls[id];if(["globalPower","yawBoost","faceSquash","hairLag","neckLag","mouthSensitivity","blinkSensitivity","trackingSpeed","meshOpacity"].includes(id))v=Number(v).toFixed(2);lab.textContent=v;}
   });
 }
 function loop(now){
@@ -629,5 +666,12 @@ function loop(now){
   if(state.obs||document.body.classList.contains("obs-mode"))draw(obsCtx,innerWidth,innerHeight,false);
   requestAnimationFrame(loop);
 }
+
+function setDebugStatus(kind,text){
+  const id = kind === "image" ? "imageStatus" : kind === "mesh" ? "meshStatus" : "renderStatus";
+  const el = document.getElementById(id);
+  if(el) el.textContent = (kind === "image" ? "Image: " : kind === "mesh" ? "Mesh: " : "Render: ") + text;
+}
+
 function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 function lerp(a,b,t){return a+(b-a)*t;}
