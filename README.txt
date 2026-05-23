@@ -1,41 +1,21 @@
-# LivePic v3.7 Cut/Rig/Live projectState
+LivePic v3.8 Cut Zoom Pins
 
-## 今回の再構成
+更新内容:
+- LivePicCutに詳細ピンモードを追加
+  - 頭頂/顎先/こめかみ/首/体
+  - 左右の目中心・目頭・目尻・上まぶた・下まぶた
+  - 口中心・左右・上下
+  - 前髪/横髪/後ろ髪のroot/tipピン
+- 最大3200%ズーム対応
+- ホイールのカーソル中心ズーム対応
+- Space＋ドラッグ移動対応
+- 100%/400%/800%/1600%プリセット追加
+- 全体表示/中央戻しボタン追加
+- ミニマップ追加
+- ピンの色分け、選択中ピン名表示、構造補助線を追加
+- 目は詳細ピンがある場合、上下まぶた・目頭・目尻から輪郭マスクを作る方式に変更
 
-LivePicの中に LivePicCut 的な流れを別タブとして組み込みました。
-
-## タブ
-
-### Cut
-- 画像読み込み
-- 基準点設定
-- 輪郭トレース
-- 自動パーツ生成
-- パーツ確認
-- Liveへ即反映
-
-### Rig
-- ボーン設定
-- 口/目の動き
-- 表情
-- テスト動作
-
-### Live
-- Cut/Rigの結果を即プレビュー
-
-### Export
-- パーツPNG保存
-- project JSON保存
-
-## 重要
-
-今回から projectState を中心にしました。
-
-- projectState.original
-- projectState.points
-- projectState.parts
-- projectState.masks
-- projectState.contours
-- projectState.rig
-
-Cutで編集した内容はLiveに即反映されます。
+検証:
+- ZIP展開確認済み
+- app.js構文チェック済み
+- 必要ファイル存在確認済み

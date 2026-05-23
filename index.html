@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v3.7 Cut/Rig/Live</title>
+  <title>LivePic v3.8 Cut Zoom Pins</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -19,7 +19,7 @@
     <button id="saveProjectBtn">保存</button>
     <button id="loadProjectBtn">復元</button>
     <button id="obsBtn">OBS表示</button>
-    <span class="pill">v3.7 Cut/Rig/Live</span>
+    <span class="pill">v3.8 Cut Zoom Pins</span>
   </div>
 </header>
 
@@ -51,18 +51,74 @@
     </div>
     <div id="cutStatus" class="hint">Cutで作ったパーツは projectState.parts に入り、Liveへ即反映されます。</div>
 
-    <h2>基準点</h2>
-    <div class="tool-grid">
-      <button class="tool active" data-point="face">顔</button>
-      <button class="tool" data-point="leftEye">左目</button>
-      <button class="tool" data-point="rightEye">右目</button>
-      <button class="tool" data-point="mouth">口</button>
-      <button class="tool" data-point="chin">あご</button>
-      <button class="tool" data-point="neck">首</button>
-      <button class="tool" data-point="body">体</button>
-      <button class="tool" data-point="hair">髪</button>
+    <h2>ズーム/移動</h2>
+    <div class="zoom-panel">
+      <div class="zoom-row">
+        <button id="zoomOutBtn">−</button>
+        <input id="zoomSlider" type="range" min="25" max="3200" value="100" step="25">
+        <button id="zoomInBtn">＋</button>
+      </div>
+      <div class="zoom-row compact">
+        <button class="zoomPreset" data-zoom="1">100%</button>
+        <button class="zoomPreset" data-zoom="4">400%</button>
+        <button class="zoomPreset" data-zoom="8">800%</button>
+        <button class="zoomPreset" data-zoom="16">1600%</button>
+      </div>
+      <div class="zoom-row compact">
+        <button id="fitViewBtn">全体表示</button>
+        <button id="resetViewBtn">中央に戻す</button>
+      </div>
+      <div class="zoom-readout">表示倍率: <b id="zoomReadout">100%</b></div>
     </div>
-    <p class="hint">プレビュー上をクリックで選択中ポイントを移動。ホイールでズーム、ドラッグで移動。</p>
+
+    <h2>基準点</h2>
+    <div class="pin-group-title">顔構造</div>
+    <div class="tool-grid dense">
+      <button class="tool active" data-point="headTop">頭頂</button>
+      <button class="tool" data-point="chin">顎先</button>
+      <button class="tool" data-point="templeL">左こめかみ</button>
+      <button class="tool" data-point="templeR">右こめかみ</button>
+      <button class="tool" data-point="neck">首中心</button>
+      <button class="tool" data-point="body">体中心</button>
+    </div>
+
+    <div class="pin-group-title">目</div>
+    <div class="tool-grid dense">
+      <button class="tool" data-point="eyeLCenter">左目中心</button>
+      <button class="tool" data-point="eyeLCornerIn">左目頭</button>
+      <button class="tool" data-point="eyeLCornerOut">左目尻</button>
+      <button class="tool" data-point="eyeLUpper">左上まぶた</button>
+      <button class="tool" data-point="eyeLLower">左下まぶた</button>
+      <button class="tool" data-point="eyeRCenter">右目中心</button>
+      <button class="tool" data-point="eyeRCornerIn">右目頭</button>
+      <button class="tool" data-point="eyeRCornerOut">右目尻</button>
+      <button class="tool" data-point="eyeRUpper">右上まぶた</button>
+      <button class="tool" data-point="eyeRLower">右下まぶた</button>
+    </div>
+
+    <div class="pin-group-title">口</div>
+    <div class="tool-grid dense">
+      <button class="tool" data-point="mouthCenter">口中心</button>
+      <button class="tool" data-point="mouthLeft">口左</button>
+      <button class="tool" data-point="mouthRight">口右</button>
+      <button class="tool" data-point="mouthUpper">口上</button>
+      <button class="tool" data-point="mouthLower">口下</button>
+    </div>
+
+    <div class="pin-group-title">髪 root/tip</div>
+    <div class="tool-grid dense">
+      <button class="tool" data-point="bangsRootL">左前髪根元</button>
+      <button class="tool" data-point="bangsTipL">左前髪先</button>
+      <button class="tool" data-point="bangsRootR">右前髪根元</button>
+      <button class="tool" data-point="bangsTipR">右前髪先</button>
+      <button class="tool" data-point="sideHairRootL">左横髪根元</button>
+      <button class="tool" data-point="sideHairTipL">左横髪先</button>
+      <button class="tool" data-point="sideHairRootR">右横髪根元</button>
+      <button class="tool" data-point="sideHairTipR">右横髪先</button>
+      <button class="tool" data-point="backHairRoot">後ろ髪根元</button>
+      <button class="tool" data-point="backHairTip">後ろ髪先</button>
+    </div>
+    <p class="hint">クリックでピン打ち。ホイールで最大3200%ズーム。Space＋ドラッグで移動、通常ドラッグでも移動できます。</p>
   </section>
 
   <section class="stage-card">
@@ -74,6 +130,7 @@
     </div>
     <div id="stage" class="stage">
       <canvas id="canvas"></canvas>
+      <canvas id="miniMap" class="minimap" width="160" height="120"></canvas>
       <div id="dropMessage">サンプルを読み込み中...</div>
     </div>
     <div class="readout">

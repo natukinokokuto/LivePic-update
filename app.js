@@ -4,13 +4,30 @@ const canvases = {
   cut: document.getElementById("canvas"),
   rig: document.getElementById("rigCanvas"),
   live: document.getElementById("liveCanvas"),
-  obs: document.getElementById("obsCanvas")
+  obs: document.getElementById("obsCanvas"),
+  mini: document.getElementById("miniMap")
 };
 const ctxs = Object.fromEntries(Object.entries(canvases).map(([k,c])=>[k,c.getContext("2d")]));
 const video=document.getElementById("video");
 
-const labels={face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",chin:"あご",neck:"首",body:"体",hair:"髪"};
-const colors={face:"#ffe66d",leftEye:"#ff66c4",rightEye:"#ff66c4",mouth:"#ff9f43",chin:"#ff7675",neck:"#55efc4",body:"#74b9ff",hair:"#a29bfe"};
+const labels={
+  headTop:"頭頂",chin:"顎先",templeL:"左こめかみ",templeR:"右こめかみ",neck:"首中心",body:"体中心",
+  eyeLCenter:"左目中心",eyeLCornerIn:"左目頭",eyeLCornerOut:"左目尻",eyeLUpper:"左上まぶた",eyeLLower:"左下まぶた",
+  eyeRCenter:"右目中心",eyeRCornerIn:"右目頭",eyeRCornerOut:"右目尻",eyeRUpper:"右上まぶた",eyeRLower:"右下まぶた",
+  mouthCenter:"口中心",mouthLeft:"口左",mouthRight:"口右",mouthUpper:"口上",mouthLower:"口下",
+  bangsRootL:"左前髪根元",bangsTipL:"左前髪先",bangsRootR:"右前髪根元",bangsTipR:"右前髪先",
+  sideHairRootL:"左横髪根元",sideHairTipL:"左横髪先",sideHairRootR:"右横髪根元",sideHairTipR:"右横髪先",
+  backHairRoot:"後ろ髪根元",backHairTip:"後ろ髪先",
+  face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",hair:"髪"
+};
+const colors={
+  headTop:"#ffe66d",chin:"#ff7675",templeL:"#ffe66d",templeR:"#ffe66d",neck:"#55efc4",body:"#74b9ff",
+  eyeLCenter:"#ff66c4",eyeLCornerIn:"#ff66c4",eyeLCornerOut:"#ff66c4",eyeLUpper:"#ff66c4",eyeLLower:"#ff66c4",
+  eyeRCenter:"#ff66c4",eyeRCornerIn:"#ff66c4",eyeRCornerOut:"#ff66c4",eyeRUpper:"#ff66c4",eyeRLower:"#ff66c4",
+  mouthCenter:"#ff9f43",mouthLeft:"#ff9f43",mouthRight:"#ff9f43",mouthUpper:"#ff9f43",mouthLower:"#ff9f43",
+  bangsRootL:"#a29bfe",bangsTipL:"#c77dff",bangsRootR:"#a29bfe",bangsTipR:"#c77dff",
+  sideHairRootL:"#a29bfe",sideHairTipL:"#c77dff",sideHairRootR:"#a29bfe",sideHairTipR:"#c77dff",backHairRoot:"#a29bfe",backHairTip:"#c77dff"
+};
 
 const projectState={
   version:"3.7",
@@ -31,8 +48,8 @@ const projectState={
 };
 
 const runtime={
-  tab:"cut", viewMode:"original", tool:"face", activeCanvas:"cut",
-  view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,moved:false},
+  tab:"cut", viewMode:"original", tool:"headTop", activeCanvas:"cut",
+  view:{zoom:1,panX:0,panY:0,dragging:false,lastX:0,lastY:0,moved:false,spaceDown:false},
   t:0,lastFrame:performance.now(),fps:0,
   smooth:{yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0},
   manual:{talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0},
@@ -104,7 +121,9 @@ function wire(){
   });
 
   setupCanvasInteraction(canvases.cut);
+  wireZoomControls();
   updateControls();
+  updateZoomUi();
 }
 
 function on(id,fn,type="click"){
@@ -121,8 +140,8 @@ function switchTab(tab){
 }
 
 function resizeAll(){
-  Object.values(canvases).forEach(c=>{
-    if(!c)return;
+  Object.entries(canvases).forEach(([key,c])=>{
+    if(!c||key==="mini")return;
     const box=c.parentElement.getBoundingClientRect();
     c.width=Math.max(1,Math.floor(box.width));
     c.height=Math.max(1,Math.floor(box.height));
@@ -158,21 +177,32 @@ function loadImage(src,name){
 
 function autoPoints(){
   projectState.points={
-    face:{x:.50,y:.36},leftEye:{x:.405,y:.325},rightEye:{x:.595,y:.325},mouth:{x:.50,y:.455},
-    chin:{x:.50,y:.535},neck:{x:.50,y:.585},body:{x:.50,y:.73},hair:{x:.50,y:.235}
+    headTop:{x:.50,y:.115}, chin:{x:.50,y:.535}, templeL:{x:.365,y:.345}, templeR:{x:.635,y:.345}, neck:{x:.50,y:.600}, body:{x:.50,y:.740},
+    eyeLCenter:{x:.405,y:.325}, eyeLCornerIn:{x:.448,y:.323}, eyeLCornerOut:{x:.362,y:.322}, eyeLUpper:{x:.405,y:.304}, eyeLLower:{x:.405,y:.344},
+    eyeRCenter:{x:.595,y:.325}, eyeRCornerIn:{x:.552,y:.323}, eyeRCornerOut:{x:.638,y:.322}, eyeRUpper:{x:.595,y:.304}, eyeRLower:{x:.595,y:.344},
+    mouthCenter:{x:.50,y:.455}, mouthLeft:{x:.465,y:.455}, mouthRight:{x:.535,y:.455}, mouthUpper:{x:.50,y:.442}, mouthLower:{x:.50,y:.470},
+    bangsRootL:{x:.435,y:.190}, bangsTipL:{x:.405,y:.318}, bangsRootR:{x:.565,y:.190}, bangsTipR:{x:.595,y:.318},
+    sideHairRootL:{x:.335,y:.275}, sideHairTipL:{x:.300,y:.565}, sideHairRootR:{x:.665,y:.275}, sideHairTipR:{x:.700,y:.565},
+    backHairRoot:{x:.50,y:.175}, backHairTip:{x:.50,y:.660}
   };
-  setStatus("cutStatus","基準点プリセットOK");
+  syncLegacyPoints();
+  setStatus("cutStatus","詳細ピンプリセットOK");
 }
 
 function selectTool(btn){
   document.querySelectorAll(".tool").forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
   runtime.tool=btn.dataset.point;
-  document.getElementById("toolReadout").textContent="選択中: "+labels[runtime.tool];
+  document.getElementById("toolReadout").textContent="選択中: "+(labels[runtime.tool]||runtime.tool);
 }
 
 function setupCanvasInteraction(c){
-  c.addEventListener("mousedown",e=>{runtime.view.dragging=true;runtime.view.lastX=e.clientX;runtime.view.lastY=e.clientY;runtime.view.moved=false;});
+  c.addEventListener("mousedown",e=>{
+    runtime.view.dragging=true;
+    runtime.view.lastX=e.clientX;
+    runtime.view.lastY=e.clientY;
+    runtime.view.moved=false;
+  });
 }
 
 window.addEventListener("mousemove",e=>{
@@ -189,15 +219,31 @@ canvases.cut.addEventListener("click",e=>{
 });
 canvases.cut.addEventListener("wheel",e=>{
   e.preventDefault();
-  runtime.view.zoom=clamp(runtime.view.zoom*(e.deltaY<0?1.1:.9),.5,4);
+  zoomAt(e.deltaY<0?1.18:1/1.18,e.clientX,e.clientY);
 },{passive:false});
+window.addEventListener("keydown",e=>{
+  if(e.code==="Space"){
+    runtime.view.spaceDown=true;
+    const stage=document.getElementById("stage");
+    if(stage)stage.classList.add("space-pan");
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup",e=>{
+  if(e.code==="Space"){
+    runtime.view.spaceDown=false;
+    const stage=document.getElementById("stage");
+    if(stage)stage.classList.remove("space-pan");
+  }
+});
 
 function placePoint(e){
   if(!projectState.original)return;
   const rect=canvases.cut.getBoundingClientRect();
   const r=imageRect(canvases.cut.width,canvases.cut.height,true);
   projectState.points[runtime.tool]={x:clamp((e.clientX-rect.left-r.x)/r.w,0,1),y:clamp((e.clientY-rect.top-r.y)/r.h,0,1)};
-  setStatus("cutStatus",`${labels[runtime.tool]}を移動`);
+  syncLegacyPoints();
+  setStatus("cutStatus",`${labels[runtime.tool]||runtime.tool}を移動`);
 }
 
 function imageRect(w,h,editor=false){
@@ -212,13 +258,84 @@ function imageRect(w,h,editor=false){
   return r;
 }
 
+
+function syncLegacyPoints(){
+  const p=projectState.points||{};
+  if(p.headTop&&p.chin){
+    p.face={x:(p.headTop.x+p.chin.x)/2,y:p.headTop.y+(p.chin.y-p.headTop.y)*.52};
+    p.hair={x:p.headTop.x,y:p.headTop.y+.08};
+  }
+  if(p.eyeLCenter)p.leftEye=p.eyeLCenter;
+  if(p.eyeRCenter)p.rightEye=p.eyeRCenter;
+  if(p.mouthCenter)p.mouth=p.mouthCenter;
+}
+
+function wireZoomControls(){
+  on("zoomInBtn",()=>zoomAt(1.35));
+  on("zoomOutBtn",()=>zoomAt(1/1.35));
+  on("fitViewBtn",()=>{runtime.view.zoom=1;runtime.view.panX=0;runtime.view.panY=0;updateZoomUi();setStatus("cutStatus","全体表示に戻しました");});
+  on("resetViewBtn",()=>{runtime.view.panX=0;runtime.view.panY=0;updateZoomUi();setStatus("cutStatus","表示位置を中央に戻しました");});
+  document.querySelectorAll(".zoomPreset").forEach(b=>b.addEventListener("click",()=>setZoom(Number(b.dataset.zoom))));
+  const slider=document.getElementById("zoomSlider");
+  if(slider)slider.addEventListener("input",()=>setZoom(Number(slider.value)/100));
+}
+
+function setZoom(z){
+  runtime.view.zoom=clamp(z,.25,32);
+  updateZoomUi();
+}
+
+function zoomAt(factor,clientX=null,clientY=null){
+  const old=runtime.view.zoom;
+  const next=clamp(old*factor,.25,32);
+  if(Math.abs(next-old)<.001)return;
+  if(clientX!=null&&clientY!=null){
+    const rect=canvases.cut.getBoundingClientRect();
+    const sx=clientX-rect.left-canvases.cut.width/2;
+    const sy=clientY-rect.top-canvases.cut.height/2;
+    const ratio=next/old;
+    runtime.view.panX=sx-(sx-runtime.view.panX)*ratio;
+    runtime.view.panY=sy-(sy-runtime.view.panY)*ratio;
+  }
+  runtime.view.zoom=next;
+  updateZoomUi();
+}
+
+function updateZoomUi(){
+  const pct=Math.round(runtime.view.zoom*100);
+  const read=document.getElementById("zoomReadout");
+  const slider=document.getElementById("zoomSlider");
+  if(read)read.textContent=pct+"%";
+  if(slider)slider.value=clamp(pct,25,3200);
+}
+
 function traceContours(){
   if(!projectState.original)return;
+  syncLegacyPoints();
   projectState.contours={
     mouth:traceFeature(projectState.points.mouth,"mouth"),
-    leftEye:traceFeature(projectState.points.leftEye,"eye"),
-    rightEye:traceFeature(projectState.points.rightEye,"eye")
+    leftEye:traceEyeFromPins("L"),
+    rightEye:traceEyeFromPins("R")
   };
+}
+
+
+function traceEyeFromPins(side){
+  const p=projectState.points;
+  const prefix=side==="L"?"eyeL":"eyeR";
+  const center=p[prefix+"Center"] || (side==="L"?p.leftEye:p.rightEye);
+  const upper=p[prefix+"Upper"], lower=p[prefix+"Lower"], inner=p[prefix+"CornerIn"], outer=p[prefix+"CornerOut"];
+  if(center&&upper&&lower&&inner&&outer&&projectState.original){
+    const w=projectState.original.width,h=projectState.original.height;
+    const points=[
+      {x:inner.x*w,y:inner.y*h},
+      {x:(center.x*.55+upper.x*.45)*w,y:upper.y*h},
+      {x:outer.x*w,y:outer.y*h},
+      {x:(center.x*.55+lower.x*.45)*w,y:lower.y*h}
+    ];
+    return {type:"eye",cx:center.x*w,cy:center.y*h,points:smoothContour(points,3)};
+  }
+  return traceFeature(center,"eye");
 }
 
 function traceFeature(pt,type){
@@ -412,14 +529,48 @@ function drawSynthetic(g,r,p,tx,ty,rot){
 
 function drawPartsGrid(g,w,h){g.fillStyle="rgba(0,0,0,.25)";g.fillRect(0,0,w,h);let i=0;Object.entries(projectState.parts).forEach(([name,img])=>{const col=i%3,row=Math.floor(i/3),cw=w/3,ch=h/4,x=col*cw,y=row*ch;g.strokeStyle="rgba(255,255,255,.2)";g.strokeRect(x+8,y+8,cw-16,ch-16);g.drawImage(img,x+10,y+26,cw-20,ch-38);g.fillStyle="#fff";g.font="13px system-ui";g.fillText(name,x+14,y+22);i++;});}
 function drawHelpers(g,r){
-  if(projectState.rig.showPins)Object.entries(projectState.points).forEach(([k,p])=>{const x=r.x+p.x*r.w,y=r.y+p.y*r.h;g.fillStyle=colors[k]||"#fff";g.beginPath();g.arc(x,y,k===runtime.tool?13:9,0,Math.PI*2);g.fill();g.strokeStyle="#111";g.stroke();});
+  drawStructureLines(g,r);
+  if(projectState.rig.showPins)Object.entries(projectState.points).forEach(([k,p])=>{
+    if(["face","leftEye","rightEye","mouth","hair"].includes(k))return;
+    const x=r.x+p.x*r.w,y=r.y+p.y*r.h;
+    g.fillStyle=colors[k]||"#fff";
+    g.beginPath();g.arc(x,y,k===runtime.tool?12:7,0,Math.PI*2);g.fill();
+    g.lineWidth=k===runtime.tool?3:2;g.strokeStyle=k===runtime.tool?"#fff":"#111";g.stroke();
+    if(k===runtime.tool){g.fillStyle="rgba(0,0,0,.65)";g.fillRect(x+12,y-24,(labels[k]||k).length*12+12,20);g.fillStyle="#fff";g.font="12px system-ui";g.fillText(labels[k]||k,x+18,y-10);}
+  });
   if(projectState.rig.showMasks&&projectState.contours){["mouth","leftEye","rightEye"].forEach(k=>{const c=projectState.contours[k];if(!c)return;g.strokeStyle=k==="mouth"?"#ff6e9a":"#7ee7ff";g.lineWidth=2;g.beginPath();c.points.forEach((p,i)=>{const x=r.x+p.x/projectState.original.width*r.w,y=r.y+p.y/projectState.original.height*r.h;i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();g.stroke();});}
 }
+
+function drawStructureLines(g,r){
+  const p=projectState.points;
+  const line=(a,b,color)=>{if(!p[a]||!p[b])return;g.strokeStyle=color;g.lineWidth=2;g.setLineDash([7,5]);g.beginPath();g.moveTo(r.x+p[a].x*r.w,r.y+p[a].y*r.h);g.lineTo(r.x+p[b].x*r.w,r.y+p[b].y*r.h);g.stroke();g.setLineDash([]);};
+  line("headTop","chin","rgba(255,230,109,.8)");
+  line("templeL","templeR","rgba(255,230,109,.55)");
+  line("chin","neck","rgba(85,239,196,.75)");
+  [["bangsRootL","bangsTipL"],["bangsRootR","bangsTipR"],["sideHairRootL","sideHairTipL"],["sideHairRootR","sideHairTipR"],["backHairRoot","backHairTip"]].forEach(pair=>line(pair[0],pair[1],"rgba(199,125,255,.8)"));
+  [["eyeLCornerIn","eyeLCornerOut"],["eyeLUpper","eyeLLower"],["eyeRCornerIn","eyeRCornerOut"],["eyeRUpper","eyeRLower"],["mouthLeft","mouthRight"],["mouthUpper","mouthLower"]].forEach(pair=>line(pair[0],pair[1],"rgba(126,231,255,.55)"));
+}
+
+function drawMiniMap(){
+  const mini=canvases.mini;if(!mini||!projectState.original)return;
+  const g=mini.getContext("2d"),w=mini.width,h=mini.height;
+  g.clearRect(0,0,w,h);g.fillStyle="rgba(5,8,16,.82)";g.fillRect(0,0,w,h);
+  const img=projectState.original, s=Math.min(w/img.width,h/img.height)*.88;
+  const x=(w-img.width*s)/2,y=(h-img.height*s)/2,iw=img.width*s,ih=img.height*s;
+  g.globalAlpha=.88;g.drawImage(img,x,y,iw,ih);g.globalAlpha=1;
+  const r=imageRect(canvases.cut.width,canvases.cut.height,true);
+  const vx=clamp((-r.x/r.w)*iw+x,x,x+iw), vy=clamp((-r.y/r.h)*ih+y,y,y+ih);
+  const vw=clamp((canvases.cut.width/r.w)*iw,4,iw), vh=clamp((canvases.cut.height/r.h)*ih,4,ih);
+  g.strokeStyle="#7ee7ff";g.lineWidth=2;g.strokeRect(vx,vy,vw,vh);
+  g.fillStyle="#7ee7ff";g.font="11px system-ui";g.fillText(Math.round(runtime.view.zoom*100)+"%",8,15);
+}
+
 
 function loop(now){
   const dt=now-runtime.lastFrame;runtime.lastFrame=now;runtime.fps=runtime.fps*.9+(1000/Math.max(1,dt))*.1;runtime.t++;
   updateMotion(now);updateMeters();
   drawAvatar(ctxs.cut,canvases.cut.width,canvases.cut.height,true,runtime.viewMode);
+  drawMiniMap();
   drawAvatar(ctxs.rig,canvases.rig.width,canvases.rig.height,false,"live");
   drawAvatar(ctxs.live,canvases.live.width,canvases.live.height,false,"live");
   if(runtime.obs)drawAvatar(ctxs.obs,canvases.obs.width,canvases.obs.height,false,"live");
@@ -451,7 +602,7 @@ function updateControls(){
 }
 function updateProjectReadout(){const el=document.getElementById("statusReadout");if(el)el.textContent=`parts:${Object.keys(projectState.parts).length} contours:${Object.keys(projectState.contours).length}`;}
 function saveProject(){localStorage.setItem("livepic_v37_project",JSON.stringify({points:projectState.points,rig:projectState.rig,originalDataUrl:projectState.originalDataUrl}));setStatus("cutStatus","保存しました");}
-function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
+function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;syncLegacyPoints();Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
 function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
 function downloadParts(){Object.entries(projectState.parts).forEach(([name,canvas],i)=>setTimeout(()=>{const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download=`livepic_${name}.png`;document.body.appendChild(a);a.click();a.remove();},i*150));}
 function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();}
