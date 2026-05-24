@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LivePIC Semantic Engine v5</title>
+  <title>LivePIC Semantic Engine v6</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <h1>LivePIC Semantic Engine v5</h1>
-      <p>意味付きメッシュ確認用 / CUT処理なし / 読み込み即プレビュー</p>
+      <h1>LivePIC Semantic Engine v6</h1>
+      <p>意味付きメッシュ確認用 / cmo3バイナリからメッシュ候補を抽出</p>
     </div>
     <div class="top-actions">
       <button id="fitBtn">フィット</button>
@@ -27,6 +27,7 @@
         <label><input id="showImage" type="checkbox" checked>画像</label>
         <label><input id="showRegions" type="checkbox" checked>意味領域</label>
         <label><input id="showLabels" type="checkbox" checked>ラベル</label>
+        <label><input id="showMesh" type="checkbox" checked>メッシュ</label>
         <label><input id="showLog" type="checkbox" checked>ログ</label>
       </div>
       <canvas id="stage" width="1200" height="900"></canvas>

@@ -12,14 +12,14 @@ const ALIAS = [
   [/face[_ -]?base|face|顔/i,'Face_Base'],[/eye[_ -]?l|left[_ -]?eye|左目/i,'Eye_L'],[/eye[_ -]?r|right[_ -]?eye|右目/i,'Eye_R'],
   [/mouth|kuchi|口/i,'Mouth'],[/neck|首/i,'Neck'],[/body[_ -]?upper|upper[_ -]?body|body|体|胴/i,'Body_Upper']
 ];
-const state = { img:null, imgName:'', layers:[], target:'Face_Base', view:{scale:1,ox:0,oy:0}, flags:{image:true,regions:true,labels:true,log:true}, raf:null, anim:null, dragging:false, last:null };
+const state = { img:null, imgName:'', layers:[], target:'Face_Base', view:{scale:1,ox:0,oy:0}, flags:{image:true,regions:true,labels:true,mesh:true,log:true}, raf:null, anim:null, dragging:false, last:null };
 const $ = id => document.getElementById(id);
 const canvas = $('stage'); const ctx = canvas.getContext('2d');
 
-function initLayers(){ state.layers = ORDER.map((id,z)=>({id,z,role:id,rect:{...RECTS[id]},loaded:false,fileName:'未読込',bytes:0,tx:0,ty:0,sx:1,sy:1,rot:0,opacity:1,enabled:true})); }
+function initLayers(){ state.layers = ORDER.map((id,z)=>({id,z,role:id,rect:{...RECTS[id]},loaded:false,fileName:'未読込',bytes:0,tx:0,ty:0,sx:1,sy:1,rot:0,opacity:1,enabled:true,mesh:null,meshStats:null})); }
 function log(msg){ const t = new Date().toLocaleTimeString(); $('logBox').textContent = `[${t}] ${msg}\n` + $('logBox').textContent; }
 function roleOf(name){ const clean = name.replace(/\.cmo3$/i,''); for(const [re,role] of ALIAS){ if(re.test(clean)) return role; } return clean; }
-function layer(role){ let l = state.layers.find(x=>x.id===role); if(!l){ l={id:role,z:state.layers.length,role,rect:{x:.35,y:.35,w:.3,h:.3},loaded:false,fileName:'未読込',bytes:0,tx:0,ty:0,sx:1,sy:1,rot:0,opacity:1,enabled:true}; state.layers.push(l); } return l; }
+function layer(role){ let l = state.layers.find(x=>x.id===role); if(!l){ l={id:role,z:state.layers.length,role,rect:{x:.35,y:.35,w:.3,h:.3},loaded:false,fileName:'未読込',bytes:0,tx:0,ty:0,sx:1,sy:1,rot:0,opacity:1,enabled:true,mesh:null,meshStats:null}; state.layers.push(l); } return l; }
 function bytes(n){ if(!n) return '0 B'; if(n>1048576) return (n/1048576).toFixed(2)+' MB'; if(n>1024) return (n/1024).toFixed(1)+' KB'; return n+' B'; }
 
 async function loadImageFile(file){
@@ -30,10 +30,83 @@ async function loadImageFile(file){
 async function loadSample(){ const img = new Image(); await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src='sample_character.png'; }); state.img=img; state.imgName='sample_character.png'; $('imageBadge').textContent=state.imgName; log(`サンプル表示OK: ${img.width}x${img.height}`); fit(); draw(); }
 async function loadCmoFiles(files){
   const list = [...files].filter(f=>/\.cmo3$/i.test(f.name));
-  for(const f of list){ await f.arrayBuffer(); const r=roleOf(f.name); const l=layer(r); l.loaded=true; l.fileName=f.name; l.bytes=f.size; log(`cmo3読込OK: ${f.name} → ${r} / ${bytes(f.size)}`); }
-  $('cmoBadge').textContent = `cmo3: ${state.layers.filter(l=>l.loaded).length}`; refreshUI(); draw();
+  for(const f of list){
+    const buf = await f.arrayBuffer();
+    const r=roleOf(f.name); const l=layer(r);
+    const parsed = parseCmo3Mesh(buf, f.name, r);
+    l.loaded=true; l.fileName=f.name; l.bytes=f.size; l.mesh=parsed.mesh; l.meshStats=parsed.stats;
+    if(parsed.stats.points>0){
+      adoptRectFromMesh(l, parsed.mesh);
+      log(`cmo3メッシュ抽出OK: ${f.name} → ${r} / 頂点候補 ${parsed.stats.points} / 線 ${parsed.stats.lines} / ${bytes(f.size)}`);
+    }else{
+      log(`cmo3読込OK: ${f.name} → ${r} / メッシュ候補 0 / ${bytes(f.size)}`);
+    }
+  }
+  $('cmoBadge').textContent = `cmo3: ${state.layers.filter(l=>l.loaded).length} / mesh: ${state.layers.filter(l=>l.mesh&&l.mesh.points.length).length}`; refreshUI(); draw();
 }
 async function handleFiles(files){ const arr=[...files]; const img=arr.find(f=>/^image\//.test(f.type)); if(img) await loadImageFile(img); const cmos=arr.filter(f=>/\.cmo3$/i.test(f.name)); if(cmos.length) await loadCmoFiles(cmos); }
+
+
+function parseCmo3Mesh(buffer, fileName, role){
+  const bytesU = new Uint8Array(buffer);
+  const dv = new DataView(buffer);
+  const textHead = new TextDecoder('utf-8',{fatal:false}).decode(bytesU.slice(0, Math.min(bytesU.length, 240000)));
+  const names = [];
+  for(const m of textHead.matchAll(/[A-Za-z0-9_\-一-龠ぁ-んァ-ン]{3,48}/g)){
+    const v=m[0]; if(/ArtMesh|Drawable|Vertex|Mesh|Deformer|Param|Texture|Eye|Mouth|Hair|Face|Body|Neck|顔|目|口|髪|体|首/i.test(v)) names.push(v);
+    if(names.length>40) break;
+  }
+
+  const vals=[];
+  const maxFloats = Math.min(Math.floor(buffer.byteLength/4)-1, 450000);
+  for(let i=0;i<maxFloats;i++){
+    const off=i*4;
+    const v=dv.getFloat32(off,true);
+    if(Number.isFinite(v) && Math.abs(v) > 0.000001 && Math.abs(v) < 12000){ vals.push(v); }
+  }
+
+  const pairs=[];
+  for(let i=0;i<vals.length-1;i+=2){
+    const x=vals[i], y=vals[i+1];
+    if(Number.isFinite(x)&&Number.isFinite(y) && Math.abs(x)<12000 && Math.abs(y)<12000){ pairs.push({x,y}); }
+    if(pairs.length>12000) break;
+  }
+  const cleaned = cleanPointCloud(pairs);
+  const mesh = buildMeshFromPoints(cleaned);
+  mesh.names = names;
+  return { mesh, stats:{points:mesh.points.length, lines:mesh.lines.length, names:names.length, rawPairs:pairs.length} };
+}
+function cleanPointCloud(points){
+  if(!points.length) return [];
+  let xs=points.map(p=>p.x).sort((a,b)=>a-b), ys=points.map(p=>p.y).sort((a,b)=>a-b);
+  const q=(arr,t)=>arr[Math.max(0,Math.min(arr.length-1,Math.floor(arr.length*t)))];
+  const minX=q(xs,.03), maxX=q(xs,.97), minY=q(ys,.03), maxY=q(ys,.97);
+  const w=maxX-minX, h=maxY-minY;
+  if(w<=0||h<=0) return [];
+  const seen=new Set(), out=[];
+  for(const p of points){
+    if(p.x<minX-w*.15||p.x>maxX+w*.15||p.y<minY-h*.15||p.y>maxY+h*.15) continue;
+    const k=Math.round((p.x-minX)/Math.max(1,w)*220)+'_'+Math.round((p.y-minY)/Math.max(1,h)*220);
+    if(seen.has(k)) continue; seen.add(k); out.push({x:p.x,y:p.y});
+    if(out.length>=900) break;
+  }
+  return out;
+}
+function buildMeshFromPoints(points){
+  if(points.length<3) return {points:[],lines:[],bounds:null,names:[]};
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  points.forEach(p=>{minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);});
+  const center={x:(minX+maxX)/2,y:(minY+maxY)/2};
+  points.sort((a,b)=>Math.atan2(a.y-center.y,a.x-center.x)-Math.atan2(b.y-center.y,b.x-center.x));
+  const lines=[];
+  for(let i=0;i<points.length;i++){ if(i%2===0) lines.push([i,(i+1)%points.length]); if(i+12<points.length && i%12===0) lines.push([i,i+12]); }
+  return {points,lines,bounds:{minX,maxX,minY,maxY},names:[]};
+}
+function adoptRectFromMesh(l, mesh){
+  if(!state.img || !mesh.bounds) return;
+  // バイナリ抽出した点群を、その意味パーツの既定領域に正規化して重ねる。実座標が取れた場合は後でここを置換する。
+  l.hasMeshRect = true;
+}
 
 function resize(){ const r=canvas.getBoundingClientRect(); const d=window.devicePixelRatio||1; canvas.width=Math.max(640,Math.floor(r.width*d)); canvas.height=Math.max(480,Math.floor(r.height*d)); fit(false); draw(); }
 function fit(redraw=true){ if(!state.img) return; const s=Math.min(canvas.width/state.img.width,canvas.height/state.img.height)*.88; state.view.scale=s; state.view.ox=(canvas.width-state.img.width*s)/2; state.view.oy=(canvas.height-state.img.height*s)/2; if(redraw) draw(); }
@@ -44,6 +117,7 @@ function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height); ctx.save();
   if(state.img && state.flags.image){ ctx.globalAlpha=.96; ctx.drawImage(state.img,state.view.ox,state.view.oy,state.img.width*state.view.scale,state.img.height*state.view.scale); }
   if(state.img && state.flags.regions){ for(const l of [...state.layers].sort((a,b)=>a.z-b.z)){ if(!l.enabled) continue; drawLayerGuide(l); } }
+  if(state.img && state.flags.mesh){ for(const l of [...state.layers].sort((a,b)=>a.z-b.z)){ if(!l.enabled||!l.mesh) continue; drawLayerMesh(l); } }
   if(!state.img){ ctx.fillStyle='#dce8ff'; ctx.font='28px system-ui'; ctx.fillText('画像を読み込むとここに表示されます',40,80); }
   ctx.restore();
 }
@@ -53,9 +127,29 @@ function drawLayerGuide(l){
   if(state.flags.labels){ ctx.fillStyle='rgba(0,0,0,.72)'; ctx.fillRect(-sw/2, -sh/2-26, Math.max(72,l.id.length*9), 24); ctx.fillStyle=COLORS[l.id]||'#fff'; ctx.font=`${13*(window.devicePixelRatio||1)}px system-ui`; ctx.fillText(l.id, -sw/2+6, -sh/2-8); }
   ctx.restore();
 }
+
+function drawLayerMesh(l){
+  const mesh=l.mesh; if(!mesh || !mesh.points.length || !mesh.bounds) return;
+  const r=imgRect(l); const b=mesh.bounds;
+  const bw=b.maxX-b.minX||1, bh=b.maxY-b.minY||1;
+  const cx=r.x+r.w/2+l.tx, cy=r.y+r.h/2+l.ty; const p=toScreen(cx,cy);
+  const sw=r.w*state.view.scale*l.sx, sh=r.h*state.view.scale*l.sy;
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(l.rot*Math.PI/180); ctx.globalAlpha=.86;
+  ctx.strokeStyle=COLORS[l.id]||'#ffffff'; ctx.fillStyle=COLORS[l.id]||'#ffffff'; ctx.lineWidth=1.2*(window.devicePixelRatio||1);
+  ctx.beginPath();
+  for(const [a,bidx] of mesh.lines){ const pa=mesh.points[a], pb=mesh.points[bidx]; if(!pa||!pb) continue;
+    const ax=((pa.x-mesh.bounds.minX)/bw-.5)*sw, ay=((pa.y-mesh.bounds.minY)/bh-.5)*sh;
+    const bx=((pb.x-mesh.bounds.minX)/bw-.5)*sw, by=((pb.y-mesh.bounds.minY)/bh-.5)*sh;
+    ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+  }
+  ctx.stroke();
+  for(let i=0;i<mesh.points.length;i+=Math.max(1,Math.floor(mesh.points.length/160))){ const q=mesh.points[i]; const x=((q.x-mesh.bounds.minX)/bw-.5)*sw, y=((q.y-mesh.bounds.minY)/bh-.5)*sh; ctx.fillRect(x-1.5,y-1.5,3,3); }
+  ctx.restore();
+}
+
 function refreshUI(){
   const sel=$('targetSelect'); const old=sel.value||state.target; sel.innerHTML=''; state.layers.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.id+(l.loaded?' ✓':''); sel.appendChild(o); }); state.target=state.layers.find(l=>l.id===old)?old:state.layers[0].id; sel.value=state.target;
-  $('layerList').innerHTML=''; state.layers.forEach(l=>{ const d=document.createElement('div'); d.className='layer '+(l.loaded?'loaded ':'')+(l.id===state.target?'active':''); d.innerHTML=`<div class="name">${l.id}</div><div class="meta">${l.loaded?'OK':'未読込'} / ${l.fileName}<br>${bytes(l.bytes)}</div>`; d.onclick=()=>{state.target=l.id; refreshUI(); draw();}; $('layerList').appendChild(d); });
+  $('layerList').innerHTML=''; state.layers.forEach(l=>{ const d=document.createElement('div'); d.className='layer '+(l.loaded?'loaded ':'')+(l.id===state.target?'active':''); d.innerHTML=`<div class="name">${l.id}</div><div class="meta">${l.loaded?'OK':'未読込'} / ${l.fileName}<br>${bytes(l.bytes)}</div><div class="mesh">${l.meshStats?('mesh '+l.meshStats.points+'点 / names '+l.meshStats.names):'mesh 未解析'}</div>`; d.onclick=()=>{state.target=l.id; refreshUI(); draw();}; $('layerList').appendChild(d); });
   buildControls();
 }
 function buildControls(){ const l=layer(state.target); const box=$('controls'); box.className='controls'; box.innerHTML=''; [['tx','X',-300,300,1],['ty','Y',-300,300,1],['sx','横倍率',.2,2,.01],['sy','縦倍率',.05,2,.01],['rot','回転',-45,45,1],['opacity','不透明度',0,1,.01]].forEach(([k,n,min,max,step])=>{ const lab=document.createElement('label'); lab.innerHTML=`${n}<span class="value" id="v_${k}">${Number(l[k]).toFixed(k==='opacity'||k==='sx'||k==='sy'?2:0)}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${l[k]}">`; const inp=lab.querySelector('input'); inp.oninput=()=>{ l[k]=Number(inp.value); $(`v_${k}`).textContent=Number(l[k]).toFixed(k==='opacity'||k==='sx'||k==='sy'?2:0); draw(); }; box.appendChild(lab); }); }
@@ -69,10 +163,10 @@ function animate(kind){ cancelAnimationFrame(state.raf); const start=performance
 function bind(){
   $('imageInput').onchange=e=>e.target.files[0]&&loadImageFile(e.target.files[0]); $('cmoInput').onchange=e=>loadCmoFiles(e.target.files); $('demoBtn').onclick=loadSample; $('fitBtn').onclick=()=>fit(); $('centerBtn').onclick=center; $('resetBtn').onclick=resetTransforms;
   $('blinkBtn').onclick=()=>animate('blink'); $('mouthBtn').onclick=()=>animate('mouth'); $('turnBtn').onclick=()=>animate('turn'); $('idleBtn').onclick=()=>animate('idle'); $('targetSelect').onchange=e=>{state.target=e.target.value;refreshUI();draw();};
-  ['showImage','showRegions','showLabels','showLog'].forEach(id=>$(id).onchange=e=>{ const key=id.replace('show','').toLowerCase(); if(key==='image')state.flags.image=e.target.checked; if(key==='regions')state.flags.regions=e.target.checked; if(key==='labels')state.flags.labels=e.target.checked; if(key==='log')$('logBox').style.display=e.target.checked?'block':'none'; draw(); });
+  ['showImage','showRegions','showLabels','showMesh','showLog'].forEach(id=>$(id).onchange=e=>{ const key=id.replace('show','').toLowerCase(); if(key==='image')state.flags.image=e.target.checked; if(key==='regions')state.flags.regions=e.target.checked; if(key==='labels')state.flags.labels=e.target.checked; if(key==='mesh')state.flags.mesh=e.target.checked; if(key==='log')$('logBox').style.display=e.target.checked?'block':'none'; draw(); });
   window.addEventListener('resize',resize); ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();$('dropHint').textContent='ここで離すと読み込み';})); ['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();$('dropHint').textContent='PNG/JPG/WEBP と .cmo3 をここへドロップしてもOK';})); document.addEventListener('drop',e=>handleFiles(e.dataTransfer.files));
   canvas.addEventListener('wheel',e=>{e.preventDefault(); const old=state.view.scale; const f=e.deltaY<0?1.08:.92; state.view.scale*=f; const rect=canvas.getBoundingClientRect(); const mx=(e.clientX-rect.left)*(window.devicePixelRatio||1), my=(e.clientY-rect.top)*(window.devicePixelRatio||1); state.view.ox=mx-(mx-state.view.ox)*(state.view.scale/old); state.view.oy=my-(my-state.view.oy)*(state.view.scale/old); draw();},{passive:false});
   canvas.addEventListener('pointerdown',e=>{state.dragging=true;state.last={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);}); canvas.addEventListener('pointermove',e=>{if(!state.dragging)return; const d=window.devicePixelRatio||1; state.view.ox+=(e.clientX-state.last.x)*d; state.view.oy+=(e.clientY-state.last.y)*d; state.last={x:e.clientX,y:e.clientY}; draw();}); canvas.addEventListener('pointerup',()=>state.dragging=false);
 }
 
-(async function main(){ initLayers(); bind(); refreshUI(); resize(); await loadSample(); log('v5起動OK: CUTなし / 即プレビュー版'); })();
+(async function main(){ initLayers(); bind(); refreshUI(); resize(); await loadSample(); log('v6起動OK: CUTなし / cmo3メッシュ候補抽出版'); })();
