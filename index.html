@@ -2,357 +2,62 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LivePic v4.2 Motion Bridge</title>
-  <link rel="stylesheet" href="./style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LivePIC Semantic Engine v1</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<header class="app-header">
-  <div>
-    <h1>LivePic</h1>
-    <p>Cutでパーツ作成、Rigで動き調整、Liveで即プレビュー。projectStateで全部つなぐ再構成版。</p>
-  </div>
-  <div class="header-actions">
-    <button id="loadSampleBtn" class="primary">サンプル</button>
-    <button id="saveProjectBtn">保存</button>
-    <button id="loadProjectBtn">復元</button>
-    <button id="obsBtn">OBS表示</button>
-    <span class="pill">v4.2 Motion Bridge</span>
-  </div>
-</header>
-
-<nav class="tabs">
-  <button class="tab active" data-tab="cut">Cut</button>
-  <button class="tab" data-tab="map">Map</button>
-  <button class="tab" data-tab="rig">Rig</button>
-  <button class="tab" data-tab="live">Live</button>
-  <button class="tab" data-tab="export">Export</button>
-</nav>
-
-<main class="tab-page active" id="tab-cut">
-  <section class="panel">
-    <h2>Cut：画像とパーツ作成</h2>
-    <label class="fileBox">
-      <input id="fileInput" type="file" accept="image/*">
-      <span>画像を選択</span>
-    </label>
-    <div class="row">
-      <button id="autoPointsBtn">基準点プリセット</button>
-      <button id="traceBtn" class="primary">輪郭トレース</button>
+  <header class="app-header">
+    <div>
+      <h1>LivePIC Semantic Engine</h1>
+      <p>Cubism = 意味マッピング / LivePIC = 動作制御</p>
     </div>
-    <div class="row">
-      <button id="autoPartsBtn" class="primary">自動パーツ生成</button>
-      <button id="generateMeshBtn" class="primary">メッシュ生成</button>
-      <button id="applyToLiveBtn">Liveへ即反映</button>
-    </div>
-    <div class="row">
-      <button id="hideHelpersBtn">補助表示OFF</button>
-      <button id="showHelpersBtn">補助表示ON</button>
-      <button id="toggleMeshBtn">メッシュ表示ON/OFF</button>
-      <button id="toggleMeshWarpBtn">メッシュ変形ON/OFF</button>
-    </div>
-    <div id="cutStatus" class="hint">v4.2: ピン設定を実際の動きへ接続。顔向き・口パク・瞬き・髪揺れを強めに反映します。</div>
+    <button id="resetBtn" class="ghost">リセット</button>
+  </header>
 
-    <h2>ズーム/移動</h2>
-    <div class="zoom-panel">
-      <div class="zoom-row">
-        <button id="zoomOutBtn">−</button>
-        <input id="zoomSlider" type="range" min="25" max="3200" value="100" step="25">
-        <button id="zoomInBtn">＋</button>
+  <main class="layout">
+    <section class="panel left">
+      <h2>1. 読み込み</h2>
+      <label class="filebox">
+        <span>表示用 PNG/JPG</span>
+        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" />
+      </label>
+      <label class="filebox">
+        <span>.cmo3 群</span>
+        <input id="cmoInput" type="file" accept=".cmo3" multiple />
+      </label>
+      <div class="hint">
+        ※ このv1では .cmo3 を「意味領域ファイル」として実読み込みして登録します。<br>
+        ※ まだCubism内部メッシュ解析はせず、名前・容量・意味スロットを確認します。
       </div>
-      <div class="zoom-row compact">
-        <button class="zoomPreset" data-zoom="1">100%</button>
-        <button class="zoomPreset" data-zoom="4">400%</button>
-        <button class="zoomPreset" data-zoom="8">800%</button>
-        <button class="zoomPreset" data-zoom="16">1600%</button>
+
+      <h2>2. 意味レイヤー</h2>
+      <div id="layerList" class="layer-list"></div>
+    </section>
+
+    <section class="viewer-wrap">
+      <div class="viewer-toolbar">
+        <button id="fitBtn">フィット</button>
+        <button id="blinkBtn">瞬きテスト</button>
+        <button id="mouthBtn">口パクテスト</button>
+        <button id="turnBtn">振り向きテスト</button>
+        <label><input id="showLabels" type="checkbox" checked /> ラベル</label>
+        <label><input id="showGuides" type="checkbox" checked /> ガイド</label>
       </div>
-      <div class="zoom-row compact">
-        <button id="fitViewBtn">全体表示</button>
-        <button id="resetViewBtn">中央に戻す</button>
-      </div>
-      <div class="zoom-readout">表示倍率: <b id="zoomReadout">100%</b></div>
-    </div>
+      <canvas id="stage" width="1000" height="1000"></canvas>
+      <div id="status" class="status">Semantic Engine Ready</div>
+    </section>
 
-    <h2>基準点</h2>
-    <div class="pin-group-title">顔構造</div>
-    <div class="tool-grid dense">
-      <button class="tool active" data-point="headTop">頭頂</button>
-      <button class="tool" data-point="chin">顎先</button>
-      <button class="tool" data-point="templeL">左こめかみ</button>
-      <button class="tool" data-point="templeR">右こめかみ</button>
-      <button class="tool" data-point="neck">首中心</button>
-      <button class="tool" data-point="body">体中心</button>
-    </div>
+    <section class="panel right">
+      <h2>3. 変形ビューア</h2>
+      <label>対象<select id="targetSelect"></select></label>
+      <div id="controlBox" class="controls"></div>
 
-    <div class="pin-group-title">目</div>
-    <div class="tool-grid dense">
-      <button class="tool" data-point="eyeLCenter">左目中心</button>
-      <button class="tool" data-point="eyeLCornerIn">左目頭</button>
-      <button class="tool" data-point="eyeLCornerOut">左目尻</button>
-      <button class="tool" data-point="eyeLUpper">左上まぶた</button>
-      <button class="tool" data-point="eyeLLower">左下まぶた</button>
-      <button class="tool" data-point="eyeRCenter">右目中心</button>
-      <button class="tool" data-point="eyeRCornerIn">右目頭</button>
-      <button class="tool" data-point="eyeRCornerOut">右目尻</button>
-      <button class="tool" data-point="eyeRUpper">右上まぶた</button>
-      <button class="tool" data-point="eyeRLower">右下まぶた</button>
-    </div>
+      <h2>描画順</h2>
+      <ol id="orderList" class="order-list"></ol>
+    </section>
+  </main>
 
-    <div class="pin-group-title">口</div>
-    <div class="tool-grid dense">
-      <button class="tool" data-point="mouthCenter">口中心</button>
-      <button class="tool" data-point="mouthLeft">口左</button>
-      <button class="tool" data-point="mouthRight">口右</button>
-      <button class="tool" data-point="mouthUpper">口上</button>
-      <button class="tool" data-point="mouthLower">口下</button>
-    </div>
-
-    <div class="pin-group-title">髪 root/bend/tip</div>
-    <div class="tool-grid dense">
-      <button class="tool" data-point="bangsRootL">左前髪根元</button>
-      <button class="tool" data-point="bangsBendL1">左前髪曲1</button>
-      <button class="tool" data-point="bangsBendL2">左前髪曲2</button>
-      <button class="tool" data-point="bangsTipL">左前髪先</button>
-      <button class="tool" data-point="bangsRootR">右前髪根元</button>
-      <button class="tool" data-point="bangsBendR1">右前髪曲1</button>
-      <button class="tool" data-point="bangsBendR2">右前髪曲2</button>
-      <button class="tool" data-point="bangsTipR">右前髪先</button>
-      <button class="tool" data-point="sideHairRootL">左横髪根元</button>
-      <button class="tool" data-point="sideHairBendL1">左横髪曲1</button>
-      <button class="tool" data-point="sideHairBendL2">左横髪曲2</button>
-      <button class="tool" data-point="sideHairTipL">左横髪先</button>
-      <button class="tool" data-point="sideHairRootR">右横髪根元</button>
-      <button class="tool" data-point="sideHairBendR1">右横髪曲1</button>
-      <button class="tool" data-point="sideHairBendR2">右横髪曲2</button>
-      <button class="tool" data-point="sideHairTipR">右横髪先</button>
-      <button class="tool" data-point="backHairRoot">後ろ髪根元</button>
-      <button class="tool" data-point="backHairBend1">後ろ髪曲1</button>
-      <button class="tool" data-point="backHairBend2">後ろ髪曲2</button>
-      <button class="tool" data-point="backHairTip">後ろ髪先</button>
-    </div>
-    <p class="hint">クリックでピン打ち。既存ピンはドラッグで移動。矢印キーで微調整、Shift＋矢印で大きめ移動。ホイールで最大3200%ズーム。</p>
-  </section>
-
-  <section class="stage-card">
-    <div class="stage-toolbar">
-      <button id="showOriginalBtn">元絵</button>
-      <button id="showInpaintBtn">穴埋め</button>
-      <button id="showPartsBtn">パーツ確認</button>
-      <button id="showLivePreviewBtn">Live確認</button>
-    </div>
-    <div id="stage" class="stage">
-      <canvas id="canvas"></canvas>
-      <canvas id="miniMap" class="minimap" width="160" height="120"></canvas>
-      <div id="dropMessage">サンプルを読み込み中...</div>
-    </div>
-    <div class="readout">
-      <span id="toolReadout">選択中: 顔</span>
-      <span id="statusReadout">projectState: --</span>
-      <span id="fpsReadout">FPS: --</span>
-    </div>
-    <div id="partsPreview" class="parts-preview"></div>
-  </section>
-
-  <section class="panel">
-    <h2>Cut設定</h2>
-    <label>輪郭感度 <span id="lineDarkSensitivityVal"></span></label>
-    <input id="lineDarkSensitivity" type="range" min="0.5" max="4" step="0.1" value="2.2">
-    <label>線の接続距離 <span id="lineConnectVal"></span></label>
-    <input id="lineConnect" type="range" min="1" max="20" value="6">
-    <label>口探索幅 <span id="mouthSearchScaleVal"></span></label>
-    <input id="mouthSearchScale" type="range" min="0.5" max="2" step="0.05" value="0.95">
-    <label>目探索幅 <span id="eyeSearchScaleVal"></span></label>
-    <input id="eyeSearchScale" type="range" min="0.5" max="2" step="0.05" value="0.90">
-    <label>穴埋め強さ <span id="inpaintStrengthVal"></span></label>
-    <input id="inpaintStrength" type="range" min="0" max="1" step="0.05" value="0.85">
-    <label>マスク表示 <input id="showMasks" type="checkbox" checked></label>
-    <label>ピン表示 <input id="showPins" type="checkbox" checked></label>
-    <label>メッシュ表示 <input id="showMesh" type="checkbox" checked></label>
-    <label>メッシュ変形 <input id="meshWarp" type="checkbox" checked></label>
-    <label>全体メッシュ強度 <span id="meshStrengthVal"></span></label>
-    <input id="meshStrength" type="range" min="0" max="1.5" step="0.05" value="0.38">
-    <label>顔ゆがみ抑制 <span id="faceWarpSoftnessVal"></span></label>
-    <input id="faceWarpSoftness" type="range" min="0" max="1" step="0.05" value="0.65">
-    <label>髪メッシュ強度 <span id="hairMeshStrengthVal"></span></label>
-    <input id="hairMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.65">
-    <label>口メッシュ強度 <span id="mouthMeshStrengthVal"></span></label>
-    <input id="mouthMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
-    <label>瞬きメッシュ強度 <span id="blinkMeshStrengthVal"></span></label>
-    <input id="blinkMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
-  </section>
-</main>
-
-<main class="tab-page" id="tab-map">
-  <section class="panel">
-    <h2>Map：意味付きメッシュ</h2>
-    <label class="fileBox">
-      <input id="cmo3Input" type="file" accept=".cmo3,image/png,image/jpeg,image/webp" multiple>
-      <span>.cmo3群 + 表示用PNG/JPGを選択</span>
-    </label>
-    <div class="row">
-      <button id="buildSemanticBtn" class="primary">意味レイヤー生成</button>
-      <button id="resetSemanticMotionBtn">変形リセット</button>
-    </div>
-    <div class="row">
-      <button id="semanticBlinkBtn">瞬き確認</button>
-      <button id="semanticMouthBtn">口パク確認</button>
-    </div>
-    <div id="semanticStatus" class="hint">Face_Base / Hair_Front / Hair_Back / Eye_L / Eye_R / Mouth / Neck / Body_Upper をLivePIC内の意味レイヤーとして扱います。画像が出ない場合は、ここで表示用PNG/JPGも一緒に選択してください。</div>
-
-    <h2>読み込み済み.cmo3</h2>
-    <div id="semanticFileList" class="semantic-list"></div>
-  </section>
-
-  <section class="stage-card live-stage-card">
-    <div class="stage-toolbar semantic-toolbar">
-      <button id="semanticAutoYawBtn">振り向き自動 OFF</button>
-      <button id="semanticOverlayBtn">意味名表示 ON</button>
-      <button id="semanticBackFillBtn">裏側補完 ON</button>
-      <button id="semanticPartsBtn">レイヤー確認</button>
-    </div>
-    <div class="stage live-stage">
-      <canvas id="mapCanvas"></canvas>
-    </div>
-    <div class="readout">
-      <span id="semanticReadout">semantic: --</span>
-      <span>まずここで Face_Base 等がリアルタイム変形できるか確認</span>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>変形ビューア</h2>
-    <label>振り向きYaw <span id="semanticYawVal"></span></label>
-    <input id="semanticYaw" type="range" min="-1" max="1" step="0.01" value="0">
-    <label>瞬き <span id="semanticBlinkVal"></span></label>
-    <input id="semanticBlink" type="range" min="0" max="1" step="0.01" value="0">
-    <label>口パク <span id="semanticMouthVal"></span></label>
-    <input id="semanticMouth" type="range" min="0" max="1" step="0.01" value="0">
-    <label>顔回転補正 <span id="semanticFaceRotateVal"></span></label>
-    <input id="semanticFaceRotate" type="range" min="0" max="12" step="0.1" value="4.2">
-    <label>前髪遅れ <span id="semanticFrontHairLagVal"></span></label>
-    <input id="semanticFrontHairLag" type="range" min="0" max="1.5" step="0.05" value="0.8">
-    <label>後ろ髪差分 <span id="semanticBackHairParallaxVal"></span></label>
-    <input id="semanticBackHairParallax" type="range" min="0" max="1.5" step="0.05" value="0.55">
-    <label>首追従 <span id="semanticNeckFollowVal"></span></label>
-    <input id="semanticNeckFollow" type="range" min="0" max="1.5" step="0.05" value="0.45">
-    <label>裏側補完強度 <span id="semanticBackFillStrengthVal"></span></label>
-    <input id="semanticBackFillStrength" type="range" min="0" max="1" step="0.05" value="0.7">
-  </section>
-</main>
-
-<main class="tab-page" id="tab-rig">
-  <section class="panel">
-    <h2>Rig：動き設定</h2>
-    <button id="applyRigPresetBtn" class="primary">Live2D寄せプリセット</button>
-    <div class="row">
-      <button id="exprNeutralBtn">通常</button>
-      <button id="exprSmileBtn">笑顔</button>
-    </div>
-    <div class="row">
-      <button id="testMouthBtn">口パクテスト</button>
-      <button id="testBlinkBtn">瞬きテスト</button>
-    </div>
-    <div class="row">
-      <button id="testMotionBtn">動作テスト</button>
-      <button id="resetMotionBtn">動作リセット</button>
-    </div>
-    <div id="rigStatus" class="hint">Rigを変更するとLiveプレビューへ即反映されます。</div>
-  </section>
-
-  <section class="stage-card">
-    <div class="stage-toolbar">
-      <button id="rigPreviewBtn">Rigプレビュー</button>
-      <button id="toggleAutoYawBtn">顔向き自動 OFF</button>
-      <button id="toggleTrackingBtn">顔トラッキング OFF</button>
-      <button id="toggleMicBtn">マイク OFF</button>
-    </div>
-    <div class="stage">
-      <canvas id="rigCanvas"></canvas>
-    </div>
-    <div class="tracking-meter">
-      <div><span>顔向き</span><b id="meterYaw">0%</b><i><em id="barYaw"></em></i></div>
-      <div><span>口</span><b id="meterMouth">0%</b><i><em id="barMouth"></em></i></div>
-      <div><span>瞬き</span><b id="meterBlink">0%</b><i><em id="barBlink"></em></i></div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>ボーン</h2>
-    <label>頭 <span id="headBoneVal"></span></label>
-    <input id="headBone" type="range" min="0" max="1.5" step="0.05" value="0.75">
-    <label>首 <span id="neckBoneVal"></span></label>
-    <input id="neckBone" type="range" min="0" max="1.5" step="0.05" value="0.42">
-    <label>髪 <span id="hairBoneVal"></span></label>
-    <input id="hairBone" type="range" min="0" max="1.5" step="0.05" value="0.62">
-    <label>頭回転 <span id="headRotateVal"></span></label>
-    <input id="headRotate" type="range" min="0" max="12" step="0.5" value="2.6">
-
-    <h2>口</h2>
-    <label>開き <span id="mouthLayerOpenVal"></span></label>
-    <input id="mouthLayerOpen" type="range" min="0" max="2.5" step="0.05" value="1.8">
-    <label>上下 <span id="mouthLayerDropVal"></span></label>
-    <input id="mouthLayerDrop" type="range" min="0" max="80" value="42">
-    <label>濃さ <span id="mouthLayerAlphaVal"></span></label>
-    <input id="mouthLayerAlpha" type="range" min="0" max="1" step="0.05" value="0.95">
-    <label>保持 <span id="mouthHoldVal"></span></label>
-    <input id="mouthHold" type="range" min="0.2" max="3" step="0.1" value="1.8">
-    <label>口中心連動 <span id="mouthLinkStrengthVal"></span></label>
-    <input id="mouthLinkStrength" type="range" min="0" max="1" step="0.05" value="1.0">
-
-    <h2>目</h2>
-    <label>閉じ <span id="eyeLayerCloseVal"></span></label>
-    <input id="eyeLayerClose" type="range" min="0" max="2.5" step="0.05" value="1.75">
-    <label>濃さ <span id="eyeLayerAlphaVal"></span></label>
-    <input id="eyeLayerAlpha" type="range" min="0" max="1" step="0.05" value="0.95">
-    <label>保持 <span id="blinkHoldVal"></span></label>
-    <input id="blinkHold" type="range" min="0.2" max="3" step="0.1" value="1.4">
-    <label>笑顔目 <span id="eyeSmileVal"></span></label>
-    <input id="eyeSmile" type="range" min="0" max="1" step="0.05" value="0.10">
-    <label>目中心連動 <span id="eyeLinkStrengthVal"></span></label>
-    <input id="eyeLinkStrength" type="range" min="0" max="1" step="0.05" value="1.0">
-    <label>瞬き形状補正 <span id="blinkShapeStrengthVal"></span></label>
-    <input id="blinkShapeStrength" type="range" min="0" max="1.5" step="0.05" value="1.0">
-  </section>
-</main>
-
-<main class="tab-page" id="tab-live">
-  <section class="stage-card live-stage-card">
-    <div class="stage-toolbar">
-      <button id="liveAutoYawBtn">顔向き自動 OFF</button>
-      <button id="liveMouthBtn">口パク</button>
-      <button id="liveBlinkBtn">瞬き</button>
-      <button id="liveResetBtn">リセット</button>
-    </div>
-    <div class="stage live-stage">
-      <canvas id="liveCanvas"></canvas>
-    </div>
-    <div class="readout">
-      <span>Cut/Rigの変更はここへ即反映</span>
-      <span id="liveStatus">Live: ready</span>
-    </div>
-  </section>
-</main>
-
-<main class="tab-page" id="tab-export">
-  <section class="panel wide">
-    <h2>Export</h2>
-    <div class="row">
-      <button id="downloadPartsBtn">パーツPNG保存</button>
-      <button id="downloadProjectBtn">project JSON保存</button>
-    </div>
-    <textarea id="projectBox" placeholder="projectState JSON"></textarea>
-    <div id="exportStatus" class="hint">projectStateとパーツを書き出せます。</div>
-  </section>
-</main>
-
-<div id="obsOverlay" class="obs hidden">
-  <canvas id="obsCanvas"></canvas>
-  <button id="closeObsBtn">戻る</button>
-</div>
-
-<video id="video" playsinline muted></video>
-<script src="./app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
