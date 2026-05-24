@@ -33,7 +33,7 @@ const colors={
 };
 
 const projectState={
-  version:"5.2",
+  version:"5.3",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -42,7 +42,7 @@ const projectState={
   contours:{},
   mesh:{vertices:[],triangles:[],edges:[]},
   inpainted:null,
-  semantic:{files:[],layers:{},showLabels:true,showBackFill:true,showParts:false},
+  semantic:{files:[],layers:{},showLabels:true,showBackFill:true,showParts:false,readOk:false},
   rig:{
     headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,
     mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,mouthLinkStrength:1.0,
@@ -633,26 +633,40 @@ function toggleAutoYaw(){runtime.autoYaw=!runtime.autoYaw;updateAutoYawButtons()
 function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn","semanticAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
 
 
-function loadSemanticFiles(files){
+async function loadSemanticFiles(files){
   const arr=Array.from(files||[]);
   const imageFiles=arr.filter(f=>/^image\//i.test(f.type)||/\.(png|jpe?g|webp)$/i.test(f.name));
   const cmo3Files=arr.filter(f=>/\.cmo3$/i.test(f.name));
+  if(!arr.length){setStatus("semanticStatus","ファイル未選択");return;}
+  if(cmo3Files.length){
+    setStatus("semanticStatus",`.cmo3読み込み中：${cmo3Files.length}件`);
+    await loadCmo3Files(cmo3Files,{silent:true});
+  }else{
+    projectState.semantic.files=[];
+    projectState.semantic.readOk=false;
+    renderSemanticFileList();
+  }
   if(imageFiles.length){
     const imgFile=imageFiles[0];
     const r=new FileReader();
     r.onload=()=>{
       loadImage(r.result,imgFile.name);
-      loadCmo3Files(cmo3Files,{silent:true});
-      setStatus("semanticStatus",`表示画像 ${imgFile.name} + .cmo3 ${cmo3Files.length}件を読み込みました。`);
-      setTimeout(()=>{buildSemanticLayers();drawSemanticViewer();},80);
+      setStatus("semanticStatus",`表示画像 ${imgFile.name} / .cmo3読込OK ${projectState.semantic.files.length}件`);
+      setTimeout(()=>{buildSemanticLayers();drawSemanticViewer();},120);
     };
+    r.onerror=()=>setStatus("semanticStatus",`表示画像の読み込み失敗：${imgFile.name}`);
     r.readAsDataURL(imgFile);
   }else{
-    loadCmo3Files(cmo3Files);
+    buildSemanticLayers();
     if(!projectState.original){
-      setStatus("semanticStatus",`.cmo3 ${cmo3Files.length}件は登録済み。ただし表示用PNG/JPGが未読み込みです。Cutタブで画像を読むか、Mapで画像も一緒に選んでください。`);
+      setStatus("semanticStatus",`.cmo3読込OK ${projectState.semantic.files.length}件。表示用PNG/JPGは未読み込み。`);
+    }else{
+      setStatus("semanticStatus",`.cmo3読込OK ${projectState.semantic.files.length}件。現在の画像へ意味スロットを接続しました。`);
+      drawSemanticViewer();
     }
   }
+  const input=document.getElementById("cmo3Input");
+  if(input)input.value="";
 }
 
 function semanticSlotFromName(name){
@@ -667,19 +681,44 @@ function semanticSlotFromName(name){
   if(base.includes("body_upper")||base.includes("upper_body")||base.includes("body"))return "Body_Upper";
   return null;
 }
-function loadCmo3Files(files,opts={}){
-  const list=Array.from(files||[]).filter(f=>/\.cmo3$/i.test(f.name)).map(f=>({name:f.name,size:f.size,slot:semanticSlotFromName(f.name)||"未割当"}));
+function readFileAsArrayBuffer(file){
+  return new Promise(resolve=>{
+    const r=new FileReader();
+    r.onload=()=>resolve({ok:true,buffer:r.result});
+    r.onerror=()=>resolve({ok:false,error:r.error?.message||"read error"});
+    r.readAsArrayBuffer(file);
+  });
+}
+async function loadCmo3Files(files,opts={}){
+  const src=Array.from(files||[]).filter(f=>/\.cmo3$/i.test(f.name));
+  const list=[];
+  for(const f of src){
+    const result=await readFileAsArrayBuffer(f);
+    const bytes=result.ok?new Uint8Array(result.buffer):new Uint8Array();
+    const header=Array.from(bytes.slice(0,12)).map(b=>b.toString(16).padStart(2,"0")).join(" ");
+    list.push({
+      name:f.name,
+      size:f.size,
+      slot:semanticSlotFromName(f.name)||"未割当",
+      loaded:!!result.ok,
+      byteLength:result.ok?result.buffer.byteLength:0,
+      header,
+      error:result.error||""
+    });
+  }
   projectState.semantic.files=list;
+  projectState.semantic.readOk=list.length>0&&list.every(f=>f.loaded&&f.byteLength>0);
   renderSemanticFileList();
   buildSemanticLayers();
   const ok=list.filter(f=>f.slot!=="未割当").length;
-  if(!opts.silent)setStatus("semanticStatus",`.cmo3 ${list.length}件を名前で意味スロットへ仮接続：${ok}件OK${projectState.original?"":" / 表示画像なし"}`);
+  const read=list.filter(f=>f.loaded).length;
+  if(!opts.silent)setStatus("semanticStatus",`.cmo3実読込 ${read}/${list.length}件 / 意味スロット一致 ${ok}件${projectState.original?"":" / 表示画像なし"}`);
 }
 function renderSemanticFileList(){
   const box=document.getElementById("semanticFileList");if(!box)return;
   const files=projectState.semantic.files||[];
   if(!files.length){box.innerHTML='<div class="semantic-item muted">未読み込み：ファイル名が Face_Base.cmo3 などなら自動割当</div>';return;}
-  box.innerHTML=files.map(f=>`<div class="semantic-item"><b>${f.slot}</b><span>${f.name}</span></div>`).join("");
+  box.innerHTML=files.map(f=>`<div class="semantic-item ${f.loaded?"loaded":"error"}"><b>${f.slot}</b><span>${f.name}</span><small>${f.loaded?`読込OK ${f.byteLength} bytes`:"読込失敗"}</small></div>`).join("");
 }
 function makeSemanticBodyMask(w,h){
   const c=createMask(w,h),g=c.getContext("2d"),p=projectState.points;
@@ -722,7 +761,7 @@ function resetSemanticMotion(){Object.assign(projectState.rig,{semanticYaw:0,sem
 function toggleSemanticLabels(){projectState.semantic.showLabels=!projectState.semantic.showLabels;const b=document.getElementById("semanticOverlayBtn");if(b)b.textContent=projectState.semantic.showLabels?"意味名表示 ON":"意味名表示 OFF";}
 function toggleSemanticBackFill(){projectState.semantic.showBackFill=!projectState.semantic.showBackFill;const b=document.getElementById("semanticBackFillBtn");if(b)b.textContent=projectState.semantic.showBackFill?"裏側補完 ON":"裏側補完 OFF";}
 function toggleSemanticParts(){projectState.semantic.showParts=!projectState.semantic.showParts;const b=document.getElementById("semanticPartsBtn");if(b)b.textContent=projectState.semantic.showParts?"通常表示へ":"レイヤー確認";}
-function updateSemanticReadout(){const el=document.getElementById("semanticReadout");if(!el)return;const n=Object.keys(projectState.semantic.layers||{}).length;const f=(projectState.semantic.files||[]).length;el.textContent=`semantic layers:${n} .cmo3:${f}`;}
+function updateSemanticReadout(){const el=document.getElementById("semanticReadout");if(!el)return;const n=Object.keys(projectState.semantic.layers||{}).length;const f=(projectState.semantic.files||[]).length;el.textContent=`semantic layers:${n} .cmo3 loaded:${f}`;}
 function semanticMotionValues(){
   const rig=projectState.rig;
   const y=runtime.autoYaw?runtime.smooth.yaw:rig.semanticYaw;
@@ -1123,7 +1162,7 @@ function generateMesh(showStatus=true){
   ].forEach(e=>edgeByPin(e[0],e[1],e[2]));
 
   projectState.mesh={
-    version:'v52_semantic_map_image_fix',
+    version:'v53_cmo3_actual_read_fix',
     vertices,triangles,edges,structures,
     notes:'透過PNGサンプルを正式基準化。alpha=0は描画・メッシュ対象外。キャラ領域と部位ピン線をメッシュ生成の基準にする。'
   };
