@@ -25,6 +25,7 @@
 
 <nav class="tabs">
   <button class="tab active" data-tab="cut">Cut</button>
+  <button class="tab" data-tab="map">Map</button>
   <button class="tab" data-tab="rig">Rig</button>
   <button class="tab" data-tab="live">Live</button>
   <button class="tab" data-tab="export">Export</button>
@@ -180,6 +181,64 @@
     <input id="mouthMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
     <label>瞬きメッシュ強度 <span id="blinkMeshStrengthVal"></span></label>
     <input id="blinkMeshStrength" type="range" min="0" max="1.5" step="0.05" value="0.85">
+  </section>
+</main>
+
+<main class="tab-page" id="tab-map">
+  <section class="panel">
+    <h2>Map：意味付きメッシュ</h2>
+    <label class="fileBox">
+      <input id="cmo3Input" type="file" accept=".cmo3" multiple>
+      <span>.cmo3群を選択</span>
+    </label>
+    <div class="row">
+      <button id="buildSemanticBtn" class="primary">意味レイヤー生成</button>
+      <button id="resetSemanticMotionBtn">変形リセット</button>
+    </div>
+    <div class="row">
+      <button id="semanticBlinkBtn">瞬き確認</button>
+      <button id="semanticMouthBtn">口パク確認</button>
+    </div>
+    <div id="semanticStatus" class="hint">Face_Base / Hair_Front / Hair_Back / Eye_L / Eye_R / Mouth / Neck / Body_Upper をLivePIC内の意味レイヤーとして扱います。</div>
+
+    <h2>読み込み済み.cmo3</h2>
+    <div id="semanticFileList" class="semantic-list"></div>
+  </section>
+
+  <section class="stage-card live-stage-card">
+    <div class="stage-toolbar semantic-toolbar">
+      <button id="semanticAutoYawBtn">振り向き自動 OFF</button>
+      <button id="semanticOverlayBtn">意味名表示 ON</button>
+      <button id="semanticBackFillBtn">裏側補完 ON</button>
+      <button id="semanticPartsBtn">レイヤー確認</button>
+    </div>
+    <div class="stage live-stage">
+      <canvas id="mapCanvas"></canvas>
+    </div>
+    <div class="readout">
+      <span id="semanticReadout">semantic: --</span>
+      <span>まずここで Face_Base 等がリアルタイム変形できるか確認</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>変形ビューア</h2>
+    <label>振り向きYaw <span id="semanticYawVal"></span></label>
+    <input id="semanticYaw" type="range" min="-1" max="1" step="0.01" value="0">
+    <label>瞬き <span id="semanticBlinkVal"></span></label>
+    <input id="semanticBlink" type="range" min="0" max="1" step="0.01" value="0">
+    <label>口パク <span id="semanticMouthVal"></span></label>
+    <input id="semanticMouth" type="range" min="0" max="1" step="0.01" value="0">
+    <label>顔回転補正 <span id="semanticFaceRotateVal"></span></label>
+    <input id="semanticFaceRotate" type="range" min="0" max="12" step="0.1" value="4.2">
+    <label>前髪遅れ <span id="semanticFrontHairLagVal"></span></label>
+    <input id="semanticFrontHairLag" type="range" min="0" max="1.5" step="0.05" value="0.8">
+    <label>後ろ髪差分 <span id="semanticBackHairParallaxVal"></span></label>
+    <input id="semanticBackHairParallax" type="range" min="0" max="1.5" step="0.05" value="0.55">
+    <label>首追従 <span id="semanticNeckFollowVal"></span></label>
+    <input id="semanticNeckFollow" type="range" min="0" max="1.5" step="0.05" value="0.45">
+    <label>裏側補完強度 <span id="semanticBackFillStrengthVal"></span></label>
+    <input id="semanticBackFillStrength" type="range" min="0" max="1" step="0.05" value="0.7">
   </section>
 </main>
 

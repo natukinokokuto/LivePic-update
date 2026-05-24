@@ -4,6 +4,7 @@ const canvases = {
   cut: document.getElementById("canvas"),
   rig: document.getElementById("rigCanvas"),
   live: document.getElementById("liveCanvas"),
+  map: document.getElementById("mapCanvas"),
   obs: document.getElementById("obsCanvas"),
   mini: document.getElementById("miniMap")
 };
@@ -19,7 +20,7 @@ const labels={
   bangsRootL:"左前髪根元",bangsBendL1:"左前髪曲1",bangsBendL2:"左前髪曲2",bangsTipL:"左前髪先",bangsRootR:"右前髪根元",bangsBendR1:"右前髪曲1",bangsBendR2:"右前髪曲2",bangsTipR:"右前髪先",
   sideHairRootL:"左横髪根元",sideHairBendL1:"左横髪曲1",sideHairBendL2:"左横髪曲2",sideHairTipL:"左横髪先",sideHairRootR:"右横髪根元",sideHairBendR1:"右横髪曲1",sideHairBendR2:"右横髪曲2",sideHairTipR:"右横髪先",
   backHairRoot:"後ろ髪根元",backHairBend1:"後ろ髪曲1",backHairBend2:"後ろ髪曲2",backHairTip:"後ろ髪先",
-  face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",hair:"髪"
+  face:"顔",leftEye:"左目",rightEye:"右目",mouth:"口",hair:"髪", Face_Base:"顔ベース", Hair_Front:"前髪", Hair_Back:"後ろ髪", Eye_L:"左目", Eye_R:"右目", Mouth:"口", Neck:"首", Body_Upper:"上半身"
 };
 const colors={
   headTop:"#ffe66d",chin:"#ff7675",templeL:"#ffe66d",templeR:"#ffe66d",neck:"#55efc4",body:"#74b9ff",
@@ -41,12 +42,14 @@ const projectState={
   contours:{},
   mesh:{vertices:[],triangles:[],edges:[]},
   inpainted:null,
+  semantic:{files:[],layers:{},showLabels:true,showBackFill:true,showParts:false},
   rig:{
     headBone:.75,neckBone:.42,hairBone:.62,headRotate:2.6,
     mouthLayerOpen:1.8,mouthLayerDrop:42,mouthLayerAlpha:.95,mouthHold:1.8,mouthLinkStrength:1.0,
     eyeLayerClose:1.75,eyeLayerAlpha:.95,blinkHold:1.4,eyeSmile:.10,eyeLinkStrength:1.0,blinkShapeStrength:1.0,
     lineDarkSensitivity:2.2,lineConnect:6,mouthSearchScale:.95,eyeSearchScale:.90,
-    inpaintStrength:.85,showMasks:true,showPins:true,showMesh:true,meshWarp:true,meshStrength:.38,hairMeshStrength:.65,mouthMeshStrength:.85,blinkMeshStrength:.85,faceWarpSoftness:.65
+    inpaintStrength:.85,showMasks:true,showPins:true,showMesh:true,meshWarp:true,meshStrength:.38,hairMeshStrength:.65,mouthMeshStrength:.85,blinkMeshStrength:.85,faceWarpSoftness:.65,
+    semanticYaw:0,semanticBlink:0,semanticMouth:0,semanticFaceRotate:4.2,semanticFrontHairLag:.8,semanticBackHairParallax:.55,semanticNeckFollow:.45,semanticBackFillStrength:.7
   }
 };
 
@@ -113,10 +116,20 @@ function wire(){
   on("liveBlinkBtn", testBlink);
   on("liveResetBtn", resetMotion);
 
+  on("cmo3Input", e=>loadCmo3Files(e.target.files), "change");
+  on("buildSemanticBtn", ()=>{buildSemanticLayers();setStatus("semanticStatus","意味レイヤー生成OK：Cubism名をLivePICの動作制御へ接続しました");});
+  on("resetSemanticMotionBtn", resetSemanticMotion);
+  on("semanticBlinkBtn", ()=>{projectState.rig.semanticBlink=1;runtime.manual.blinkUntil=performance.now()+900;updateControls();});
+  on("semanticMouthBtn", ()=>{projectState.rig.semanticMouth=1;runtime.manual.mouthUntil=performance.now()+1200;updateControls();});
+  on("semanticAutoYawBtn", toggleAutoYaw);
+  on("semanticOverlayBtn", toggleSemanticLabels);
+  on("semanticBackFillBtn", toggleSemanticBackFill);
+  on("semanticPartsBtn", toggleSemanticParts);
+
   on("downloadPartsBtn", downloadParts);
   on("downloadProjectBtn", downloadProjectJson);
 
-  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","mouthLinkStrength","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","eyeLinkStrength","blinkShapeStrength","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins","showMesh","meshWarp","meshStrength","hairMeshStrength","mouthMeshStrength","blinkMeshStrength","faceWarpSoftness"].forEach(id=>{
+  ["headBone","neckBone","hairBone","headRotate","mouthLayerOpen","mouthLayerDrop","mouthLayerAlpha","mouthHold","mouthLinkStrength","eyeLayerClose","eyeLayerAlpha","blinkHold","eyeSmile","eyeLinkStrength","blinkShapeStrength","lineDarkSensitivity","lineConnect","mouthSearchScale","eyeSearchScale","inpaintStrength","showMasks","showPins","showMesh","meshWarp","meshStrength","hairMeshStrength","mouthMeshStrength","blinkMeshStrength","faceWarpSoftness","semanticYaw","semanticBlink","semanticMouth","semanticFaceRotate","semanticFrontHairLag","semanticBackHairParallax","semanticNeckFollow","semanticBackFillStrength"].forEach(id=>{
     const el=document.getElementById(id);
     if(!el)return;
     el.addEventListener(el.type==="checkbox"?"change":"input",()=>{
@@ -552,8 +565,17 @@ function generateParts(){
     left_eye:cutLayer(src,masks.leftEye),
     right_eye:cutLayer(src,masks.rightEye),
     mouth:cutLayer(src,masks.mouth),
-    neck:cutLayer(src,masks.neck)
+    neck:cutLayer(src,masks.neck),
+    Face_Base:cutLayer(src,masks.face),
+    Hair_Front:cutLayer(src,masks.hair),
+    Hair_Back:cutLayer(src,makeSemanticHairBackMask(w,h)),
+    Eye_L:cutLayer(src,masks.leftEye),
+    Eye_R:cutLayer(src,masks.rightEye),
+    Mouth:cutLayer(src,masks.mouth),
+    Neck:cutLayer(src,masks.neck),
+    Body_Upper:cutLayer(src,makeSemanticBodyMask(w,h))
   };
+  buildSemanticLayers(false);
   generateMesh(false);
   renderPartsPreview();
 }
@@ -608,7 +630,122 @@ function testMotion(){
 }
 function resetMotion(){runtime.smooth={yaw:0,mouth:0,blink:0,headX:0,headY:0,neckX:0,hairX:0};runtime.manual={talking:0,blinkBoost:0,mouthUntil:0,blinkUntil:0};runtime.autoYaw=false;updateAutoYawButtons();}
 function toggleAutoYaw(){runtime.autoYaw=!runtime.autoYaw;updateAutoYawButtons();}
-function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
+function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn","semanticAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
+
+
+function semanticSlotFromName(name){
+  const base=(name||"").replace(/\.cmo3$/i,"").replace(/[^a-z0-9_]/ig,"_").toLowerCase();
+  if(base.includes("face_base")||base==="face")return "Face_Base";
+  if(base.includes("hair_front")||base.includes("front_hair"))return "Hair_Front";
+  if(base.includes("hair_back")||base.includes("back_hair"))return "Hair_Back";
+  if(base.includes("eye_l")||base.includes("left_eye"))return "Eye_L";
+  if(base.includes("eye_r")||base.includes("right_eye"))return "Eye_R";
+  if(base.includes("mouth"))return "Mouth";
+  if(base.includes("neck"))return "Neck";
+  if(base.includes("body_upper")||base.includes("upper_body")||base.includes("body"))return "Body_Upper";
+  return null;
+}
+function loadCmo3Files(files){
+  const list=Array.from(files||[]).map(f=>({name:f.name,size:f.size,slot:semanticSlotFromName(f.name)||"未割当"}));
+  projectState.semantic.files=list;
+  renderSemanticFileList();
+  buildSemanticLayers();
+  const ok=list.filter(f=>f.slot!=="未割当").length;
+  setStatus("semanticStatus",`.cmo3 ${list.length}件を名前で意味スロットへ仮接続：${ok}件OK`);
+}
+function renderSemanticFileList(){
+  const box=document.getElementById("semanticFileList");if(!box)return;
+  const files=projectState.semantic.files||[];
+  if(!files.length){box.innerHTML='<div class="semantic-item muted">未読み込み：ファイル名が Face_Base.cmo3 などなら自動割当</div>';return;}
+  box.innerHTML=files.map(f=>`<div class="semantic-item"><b>${f.slot}</b><span>${f.name}</span></div>`).join("");
+}
+function makeSemanticBodyMask(w,h){
+  const c=createMask(w,h),g=c.getContext("2d"),p=projectState.points;
+  const y0=(p.neck?.y||.60)*h, y1=(p.bodyBottom?.y||.94)*h;
+  g.fillStyle="#fff";g.beginPath();
+  g.moveTo((p.shoulderL?.x||.25)*w,(p.shoulderL?.y||.66)*h);
+  g.lineTo((p.shoulderR?.x||.75)*w,(p.shoulderR?.y||.66)*h);
+  g.lineTo((p.bodyR?.x||.69)*w,y1);
+  g.lineTo((p.bodyL?.x||.31)*w,y1);
+  g.closePath();g.fill();
+  g.globalCompositeOperation="destination-out";
+  g.fillStyle="#fff";g.beginPath();g.ellipse((p.neck?.x||.5)*w,y0,.08*w,.06*h,0,0,Math.PI*2);g.fill();
+  g.globalCompositeOperation="source-over";return c;
+}
+function makeSemanticHairBackMask(w,h){
+  const c=createMask(w,h),g=c.getContext("2d"),p=projectState.points;
+  const cx=(p.backHairRoot?.x||.5)*w, cy=(p.backHairRoot?.y||.20)*h;
+  g.fillStyle="#fff";g.beginPath();g.ellipse(cx,cy+.16*h,.28*w,.30*h,0,0,Math.PI*2);g.fill();
+  if(projectState.masks?.face){g.globalCompositeOperation="destination-out";g.drawImage(projectState.masks.face,0,0);g.globalCompositeOperation="source-over";}
+  return c;
+}
+function buildSemanticLayers(render=true){
+  if(!projectState.original||!projectState.parts)return;
+  const p=projectState.parts;
+  projectState.semantic.layers={
+    Body_Upper:{part:p.Body_Upper||p.base_inpainted,anchor:"body",order:0},
+    Hair_Back:{part:p.Hair_Back||p.front_hair,anchor:"backHairRoot",order:1},
+    Neck:{part:p.Neck||p.neck,anchor:"neck",order:2},
+    Face_Base:{part:p.Face_Base||p.face,anchor:"face",order:3},
+    Eye_L:{part:p.Eye_L||p.left_eye,anchor:"leftEye",order:4},
+    Eye_R:{part:p.Eye_R||p.right_eye,anchor:"rightEye",order:5},
+    Mouth:{part:p.Mouth||p.mouth,anchor:"mouth",order:6},
+    Hair_Front:{part:p.Hair_Front||p.front_hair,anchor:"hair",order:7}
+  };
+  renderSemanticFileList();
+  updateSemanticReadout();
+  if(render)drawSemanticViewer();
+}
+function resetSemanticMotion(){Object.assign(projectState.rig,{semanticYaw:0,semanticBlink:0,semanticMouth:0});runtime.smooth.yaw=0;updateControls();}
+function toggleSemanticLabels(){projectState.semantic.showLabels=!projectState.semantic.showLabels;const b=document.getElementById("semanticOverlayBtn");if(b)b.textContent=projectState.semantic.showLabels?"意味名表示 ON":"意味名表示 OFF";}
+function toggleSemanticBackFill(){projectState.semantic.showBackFill=!projectState.semantic.showBackFill;const b=document.getElementById("semanticBackFillBtn");if(b)b.textContent=projectState.semantic.showBackFill?"裏側補完 ON":"裏側補完 OFF";}
+function toggleSemanticParts(){projectState.semantic.showParts=!projectState.semantic.showParts;const b=document.getElementById("semanticPartsBtn");if(b)b.textContent=projectState.semantic.showParts?"通常表示へ":"レイヤー確認";}
+function updateSemanticReadout(){const el=document.getElementById("semanticReadout");if(!el)return;const n=Object.keys(projectState.semantic.layers||{}).length;const f=(projectState.semantic.files||[]).length;el.textContent=`semantic layers:${n} .cmo3:${f}`;}
+function semanticMotionValues(){
+  const rig=projectState.rig;
+  const y=runtime.autoYaw?runtime.smooth.yaw:rig.semanticYaw;
+  const blink=Math.max(rig.semanticBlink||0,runtime.smooth.blink||0);
+  const mouth=Math.max(rig.semanticMouth||0,runtime.smooth.mouth||0);
+  return {yaw:clamp(y,-1,1),blink:clamp(blink,0,1),mouth:clamp(mouth,0,1)};
+}
+function drawSemanticViewer(){
+  const c=canvases.map,g=ctxs.map;if(!c||!g)return;
+  g.clearRect(0,0,c.width,c.height);
+  if(!projectState.original){return;}
+  if(!projectState.semantic.layers||!Object.keys(projectState.semantic.layers).length)buildSemanticLayers(false);
+  const r=imageRect(c.width,c.height,false), rig=projectState.rig, p=projectState.points, m=semanticMotionValues(), scale=r.w/projectState.original.width;
+  if(projectState.semantic.showBackFill){
+    g.save();g.globalAlpha=rig.semanticBackFillStrength||.7;g.filter="blur(10px)";g.drawImage(projectState.inpainted||projectState.parts.base_inpainted||getRenderSource(),r.x-4*scale,r.y,r.w+8*scale,r.h);g.restore();
+  }
+  const rot=m.yaw*(rig.semanticFaceRotate||4.2)*Math.PI/180;
+  const headX=m.yaw*42*scale, neckX=m.yaw*18*scale*(rig.semanticNeckFollow||.45);
+  const backX=m.yaw*22*scale*(rig.semanticBackHairParallax||.55), frontX=-m.yaw*34*scale*(rig.semanticFrontHairLag||.8);
+  const draw=(slot,tx=0,ty=0,rr=0,sx=1,sy=1,a=1)=>{
+    const layer=projectState.semantic.layers[slot]; if(!layer||!layer.part)return;
+    const pt=p[layer.anchor]||p.face||{x:.5,y:.5};
+    if(projectState.semantic.showParts){a*= slot==="Face_Base"?.86:.72;}
+    drawPart(g,layer.part,pt,r,tx,ty,rr,sx,sy,a);
+    if(projectState.semantic.showLabels)drawSemanticLabel(g,slot,pt,r,tx,ty);
+  };
+  draw("Body_Upper",0,0,0,1,1,1);
+  draw("Hair_Back",backX,0,rot*.08,1-Math.abs(m.yaw)*.03,1,1);
+  draw("Neck",neckX,0,rot*.08,1,1,1);
+  draw("Face_Base",headX,0,rot,1-Math.abs(m.yaw)*.035,1,1);
+  draw("Eye_L",headX*.72,0,rot*.25,1,Math.max(.06,1-m.blink*.92),1);
+  draw("Eye_R",headX*.72,0,rot*.25,1,Math.max(.06,1-m.blink*.92),1);
+  draw("Mouth",headX*.80,m.mouth*34*scale,rot*.18,1+m.mouth*.16,1+m.mouth*.55,1);
+  draw("Hair_Front",frontX,0,rot*.18,1,1,1);
+  if(projectState.semantic.showParts){drawSemanticOrderGuide(g,r);}
+  updateSemanticReadout();
+}
+function drawSemanticLabel(g,slot,pt,r,tx=0,ty=0){
+  const x=r.x+pt.x*r.w+tx,y=r.y+pt.y*r.h+ty;
+  g.save();g.font="12px system-ui";g.fillStyle="rgba(4,8,16,.72)";g.fillRect(x+7,y-18,g.measureText(slot).width+12,20);g.fillStyle="#7ee7ff";g.fillText(slot,x+13,y-4);g.restore();
+}
+function drawSemanticOrderGuide(g,r){
+  const slots=["Body_Upper","Hair_Back","Neck","Face_Base","Eye_L","Eye_R","Mouth","Hair_Front"];
+  g.save();g.font="12px system-ui";g.fillStyle="rgba(0,0,0,.45)";g.fillRect(r.x+10,r.y+10,180,slots.length*18+14);slots.forEach((s,i)=>{g.fillStyle="#f4f6ff";g.fillText(`${i+1}. ${s}`,r.x+20,r.y+32+i*18);});g.restore();
+}
 
 function drawAvatar(g,w,h,editor=false,mode="live"){
   g.clearRect(0,0,w,h);
@@ -1186,6 +1323,7 @@ function loop(now){
   drawMiniMap();
   drawAvatar(ctxs.rig,canvases.rig.width,canvases.rig.height,false,"live");
   drawAvatar(ctxs.live,canvases.live.width,canvases.live.height,false,"live");
+  drawSemanticViewer();
   if(runtime.obs)drawAvatar(ctxs.obs,canvases.obs.width,canvases.obs.height,false,"live");
   const fps=document.getElementById("fpsReadout");if(fps)fps.textContent="FPS: "+Math.round(runtime.fps);
   requestAnimationFrame(loop);
@@ -1206,6 +1344,8 @@ function updateMotion(now){
   if(now<runtime.manual.blinkUntil)blink=1;
   runtime.smooth.blink=lerp(runtime.smooth.blink,blink,.48);
   runtime.manual.blinkBoost*=.42;
+  if(now>=runtime.manual.mouthUntil && projectState.rig.semanticMouth>0)projectState.rig.semanticMouth=lerp(projectState.rig.semanticMouth,0,.16);
+  if(now>=runtime.manual.blinkUntil && projectState.rig.semanticBlink>0)projectState.rig.semanticBlink=lerp(projectState.rig.semanticBlink,0,.22);
 }
 function updateMeters(){const vals={Yaw:Math.round(Math.abs(runtime.smooth.yaw)*100),Mouth:Math.round(runtime.smooth.mouth*100),Blink:Math.round(runtime.smooth.blink*100)};Object.entries(vals).forEach(([k,v])=>{const m=document.getElementById("meter"+k),b=document.getElementById("bar"+k);if(m)m.textContent=v+"%";if(b)b.style.width=v+"%";});}
 
@@ -1216,7 +1356,7 @@ function updateControls(){
 function updateProjectReadout(){const el=document.getElementById("statusReadout");if(el)el.textContent=`parts:${Object.keys(projectState.parts).length} contours:${Object.keys(projectState.contours).length} mesh:${projectState.mesh?.triangles?.length||0}`;}
 function saveProject(){localStorage.setItem("livepic_v37_project",JSON.stringify({points:projectState.points,rig:projectState.rig,mesh:projectState.mesh,originalDataUrl:projectState.originalDataUrl}));setStatus("cutStatus","保存しました");}
 function loadProject(){const raw=localStorage.getItem("livepic_v37_project");if(!raw)return setStatus("cutStatus","保存なし");const d=JSON.parse(raw);projectState.points=d.points||projectState.points;projectState.mesh=d.mesh||projectState.mesh;syncLegacyPoints();generateMesh(false);Object.assign(projectState.rig,d.rig||{});updateControls();if(d.originalDataUrl)loadImage(d.originalDataUrl,"restored");}
-function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,mesh:projectState.mesh,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
+function downloadProjectJson(){const data={version:projectState.version,points:projectState.points,mesh:projectState.mesh,semantic:projectState.semantic,rig:projectState.rig};document.getElementById("projectBox").value=JSON.stringify(data,null,2);downloadText("livepic_project.json",JSON.stringify(data,null,2));}
 function downloadParts(){Object.entries(projectState.parts).forEach(([name,canvas],i)=>setTimeout(()=>{const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download=`livepic_${name}.png`;document.body.appendChild(a);a.click();a.remove();},i*150));}
 function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();}
 function openObs(){runtime.obs=true;document.getElementById("obsOverlay").classList.remove("hidden");resizeAll();}

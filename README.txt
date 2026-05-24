@@ -1,12 +1,14 @@
-LivePic v50 transparent PNG base rebuild
+LivePic v51 semantic mesh mapping viewer
 
-確認済み:
-- sample_character.png を透過PNG版に差し替え
-- PNG alpha channel: 0〜255 を確認
-- alpha=0 の透明領域を背景として扱う前提
-- app.js 構文チェックOK
-- ZIP展開テストOK
+変更点:
+- Mapタブを追加
+- .cmo3群をファイル名で Face_Base / Hair_Front / Hair_Back / Eye_L / Eye_R / Mouth / Neck / Body_Upper に仮割当
+- 意味レイヤー生成ボタンを追加
+- 変形ビューアでYaw / 瞬き / 口パク / 顔回転補正 / 前髪遅れ / 後ろ髪差分 / 首追従 / 裏側補完強度をリアルタイム確認
+- Eye_L / Eye_R は縦圧縮で瞬き、Mouth は縦変形で口パク
+- Hair_Front / Hair_Back は前後差で振り向き確認
+- Face_Base + Neck の回転/追従補正を確認可能
 
 注意:
-- これは v49 のコードをベースに、正式サンプルを透過PNG基準へ戻した版。
-- 次の確認ポイントは、アプリ上で透明部分にメッシュが出ないか。
+現段階では.cmo3のバイナリ内部メッシュ解析ではなく、ファイル名を意味スロットとして扱う変形ビューアです。
+Cubism = 意味マッピング、LivePIC = 動作制御の接続テスト用です。
