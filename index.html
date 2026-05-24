@@ -3,59 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LivePIC Semantic Engine v1</title>
+  <title>LivePIC Semantic Engine v5</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="app-header">
+  <header class="topbar">
     <div>
-      <h1>LivePIC Semantic Engine</h1>
-      <p>Cubism = 意味マッピング / LivePIC = 動作制御</p>
+      <h1>LivePIC Semantic Engine v5</h1>
+      <p>意味付きメッシュ確認用 / CUT処理なし / 読み込み即プレビュー</p>
     </div>
-    <button id="resetBtn" class="ghost">リセット</button>
+    <div class="top-actions">
+      <button id="fitBtn">フィット</button>
+      <button id="centerBtn">中央</button>
+      <button id="resetBtn">リセット</button>
+    </div>
   </header>
 
-  <main class="layout">
-    <section class="panel left">
-      <h2>1. 読み込み</h2>
-      <label class="filebox">
-        <span>表示用 PNG/JPG</span>
-        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" />
-      </label>
-      <label class="filebox">
-        <span>.cmo3 群</span>
-        <input id="cmoInput" type="file" accept=".cmo3" multiple />
-      </label>
-      <div class="hint">
-        ※ このv1では .cmo3 を「意味領域ファイル」として実読み込みして登録します。<br>
-        ※ まだCubism内部メッシュ解析はせず、名前・容量・意味スロットを確認します。
+  <main class="app-grid">
+    <section class="stage-card">
+      <div class="stage-toolbar">
+        <strong id="imageBadge">sample_character.png</strong>
+        <span id="cmoBadge">cmo3: 0</span>
+        <label><input id="showImage" type="checkbox" checked>画像</label>
+        <label><input id="showRegions" type="checkbox" checked>意味領域</label>
+        <label><input id="showLabels" type="checkbox" checked>ラベル</label>
+        <label><input id="showLog" type="checkbox" checked>ログ</label>
       </div>
-
-      <h2>2. 意味レイヤー</h2>
-      <div id="layerList" class="layer-list"></div>
+      <canvas id="stage" width="1200" height="900"></canvas>
+      <div id="dropHint" class="drop-hint">PNG/JPG/WEBP と .cmo3 をここへドロップしてもOK</div>
     </section>
 
-    <section class="viewer-wrap">
-      <div class="viewer-toolbar">
-        <button id="fitBtn">フィット</button>
-        <button id="blinkBtn">瞬きテスト</button>
-        <button id="mouthBtn">口パクテスト</button>
-        <button id="turnBtn">振り向きテスト</button>
-        <label><input id="showLabels" type="checkbox" checked /> ラベル</label>
-        <label><input id="showGuides" type="checkbox" checked /> ガイド</label>
-      </div>
-      <canvas id="stage" width="1000" height="1000"></canvas>
-      <div id="status" class="status">Semantic Engine Ready</div>
-    </section>
+    <aside class="side-card">
+      <section class="box">
+        <h2>1. 読み込み</h2>
+        <label class="file-row">表示用画像<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp"></label>
+        <label class="file-row">.cmo3群<input id="cmoInput" type="file" accept=".cmo3" multiple></label>
+        <button id="demoBtn" class="wide">サンプル表示</button>
+      </section>
 
-    <section class="panel right">
-      <h2>3. 変形ビューア</h2>
-      <label>対象<select id="targetSelect"></select></label>
-      <div id="controlBox" class="controls"></div>
+      <section class="box">
+        <h2>2. テスト</h2>
+        <div class="test-buttons">
+          <button id="blinkBtn">瞬き</button>
+          <button id="mouthBtn">口パク</button>
+          <button id="turnBtn">振り向き</button>
+          <button id="idleBtn">揺れ</button>
+        </div>
+      </section>
 
-      <h2>描画順</h2>
-      <ol id="orderList" class="order-list"></ol>
-    </section>
+      <section class="box">
+        <h2>3. 変形</h2>
+        <label class="select-row">対象<select id="targetSelect"></select></label>
+        <div id="controls"></div>
+      </section>
+
+      <section class="box grow">
+        <h2>4. 読み込み確認</h2>
+        <div id="layerList" class="layer-list"></div>
+        <pre id="logBox" class="log"></pre>
+      </section>
+    </aside>
   </main>
 
   <script src="app.js"></script>
