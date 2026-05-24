@@ -188,8 +188,8 @@
   <section class="panel">
     <h2>Map：意味付きメッシュ</h2>
     <label class="fileBox">
-      <input id="cmo3Input" type="file" accept=".cmo3" multiple>
-      <span>.cmo3群を選択</span>
+      <input id="cmo3Input" type="file" accept=".cmo3,image/png,image/jpeg,image/webp" multiple>
+      <span>.cmo3群 + 表示用PNG/JPGを選択</span>
     </label>
     <div class="row">
       <button id="buildSemanticBtn" class="primary">意味レイヤー生成</button>
@@ -199,7 +199,7 @@
       <button id="semanticBlinkBtn">瞬き確認</button>
       <button id="semanticMouthBtn">口パク確認</button>
     </div>
-    <div id="semanticStatus" class="hint">Face_Base / Hair_Front / Hair_Back / Eye_L / Eye_R / Mouth / Neck / Body_Upper をLivePIC内の意味レイヤーとして扱います。</div>
+    <div id="semanticStatus" class="hint">Face_Base / Hair_Front / Hair_Back / Eye_L / Eye_R / Mouth / Neck / Body_Upper をLivePIC内の意味レイヤーとして扱います。画像が出ない場合は、ここで表示用PNG/JPGも一緒に選択してください。</div>
 
     <h2>読み込み済み.cmo3</h2>
     <div id="semanticFileList" class="semantic-list"></div>

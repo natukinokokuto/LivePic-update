@@ -33,7 +33,7 @@ const colors={
 };
 
 const projectState={
-  version:"5.0",
+  version:"5.2",
   original:null,
   originalDataUrl:"",
   points:{},
@@ -116,7 +116,7 @@ function wire(){
   on("liveBlinkBtn", testBlink);
   on("liveResetBtn", resetMotion);
 
-  on("cmo3Input", e=>loadCmo3Files(e.target.files), "change");
+  on("cmo3Input", e=>loadSemanticFiles(e.target.files), "change");
   on("buildSemanticBtn", ()=>{buildSemanticLayers();setStatus("semanticStatus","意味レイヤー生成OK：Cubism名をLivePICの動作制御へ接続しました");});
   on("resetSemanticMotionBtn", resetSemanticMotion);
   on("semanticBlinkBtn", ()=>{projectState.rig.semanticBlink=1;runtime.manual.blinkUntil=performance.now()+900;updateControls();});
@@ -633,6 +633,28 @@ function toggleAutoYaw(){runtime.autoYaw=!runtime.autoYaw;updateAutoYawButtons()
 function updateAutoYawButtons(){["toggleAutoYawBtn","liveAutoYawBtn","semanticAutoYawBtn"].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=runtime.autoYaw?"顔向き自動 ON":"顔向き自動 OFF";});}
 
 
+function loadSemanticFiles(files){
+  const arr=Array.from(files||[]);
+  const imageFiles=arr.filter(f=>/^image\//i.test(f.type)||/\.(png|jpe?g|webp)$/i.test(f.name));
+  const cmo3Files=arr.filter(f=>/\.cmo3$/i.test(f.name));
+  if(imageFiles.length){
+    const imgFile=imageFiles[0];
+    const r=new FileReader();
+    r.onload=()=>{
+      loadImage(r.result,imgFile.name);
+      loadCmo3Files(cmo3Files,{silent:true});
+      setStatus("semanticStatus",`表示画像 ${imgFile.name} + .cmo3 ${cmo3Files.length}件を読み込みました。`);
+      setTimeout(()=>{buildSemanticLayers();drawSemanticViewer();},80);
+    };
+    r.readAsDataURL(imgFile);
+  }else{
+    loadCmo3Files(cmo3Files);
+    if(!projectState.original){
+      setStatus("semanticStatus",`.cmo3 ${cmo3Files.length}件は登録済み。ただし表示用PNG/JPGが未読み込みです。Cutタブで画像を読むか、Mapで画像も一緒に選んでください。`);
+    }
+  }
+}
+
 function semanticSlotFromName(name){
   const base=(name||"").replace(/\.cmo3$/i,"").replace(/[^a-z0-9_]/ig,"_").toLowerCase();
   if(base.includes("face_base")||base==="face")return "Face_Base";
@@ -645,13 +667,13 @@ function semanticSlotFromName(name){
   if(base.includes("body_upper")||base.includes("upper_body")||base.includes("body"))return "Body_Upper";
   return null;
 }
-function loadCmo3Files(files){
-  const list=Array.from(files||[]).map(f=>({name:f.name,size:f.size,slot:semanticSlotFromName(f.name)||"未割当"}));
+function loadCmo3Files(files,opts={}){
+  const list=Array.from(files||[]).filter(f=>/\.cmo3$/i.test(f.name)).map(f=>({name:f.name,size:f.size,slot:semanticSlotFromName(f.name)||"未割当"}));
   projectState.semantic.files=list;
   renderSemanticFileList();
   buildSemanticLayers();
   const ok=list.filter(f=>f.slot!=="未割当").length;
-  setStatus("semanticStatus",`.cmo3 ${list.length}件を名前で意味スロットへ仮接続：${ok}件OK`);
+  if(!opts.silent)setStatus("semanticStatus",`.cmo3 ${list.length}件を名前で意味スロットへ仮接続：${ok}件OK${projectState.original?"":" / 表示画像なし"}`);
 }
 function renderSemanticFileList(){
   const box=document.getElementById("semanticFileList");if(!box)return;
@@ -708,10 +730,24 @@ function semanticMotionValues(){
   const mouth=Math.max(rig.semanticMouth||0,runtime.smooth.mouth||0);
   return {yaw:clamp(y,-1,1),blink:clamp(blink,0,1),mouth:clamp(mouth,0,1)};
 }
+function drawSemanticEmptyState(g,w,h){
+  g.save();
+  g.fillStyle="rgba(4,8,16,.35)";
+  g.fillRect(0,0,w,h);
+  g.font="700 18px system-ui";
+  g.fillStyle="#7ee7ff";
+  g.textAlign="center";
+  g.fillText("表示用画像が未読み込み",w/2,h/2-18);
+  g.font="13px system-ui";
+  g.fillStyle="rgba(244,246,255,.78)";
+  g.fillText("MapでPNG/JPGも一緒に選ぶか、Cutタブで画像を読み込んでください",w/2,h/2+10);
+  g.restore();
+}
+
 function drawSemanticViewer(){
   const c=canvases.map,g=ctxs.map;if(!c||!g)return;
   g.clearRect(0,0,c.width,c.height);
-  if(!projectState.original){return;}
+  if(!projectState.original){drawSemanticEmptyState(g,c.width,c.height);return;}
   if(!projectState.semantic.layers||!Object.keys(projectState.semantic.layers).length)buildSemanticLayers(false);
   const r=imageRect(c.width,c.height,false), rig=projectState.rig, p=projectState.points, m=semanticMotionValues(), scale=r.w/projectState.original.width;
   if(projectState.semantic.showBackFill){
@@ -1087,7 +1123,7 @@ function generateMesh(showStatus=true){
   ].forEach(e=>edgeByPin(e[0],e[1],e[2]));
 
   projectState.mesh={
-    version:'v50_transparent_png_base_mesh',
+    version:'v52_semantic_map_image_fix',
     vertices,triangles,edges,structures,
     notes:'透過PNGサンプルを正式基準化。alpha=0は描画・メッシュ対象外。キャラ領域と部位ピン線をメッシュ生成の基準にする。'
   };
